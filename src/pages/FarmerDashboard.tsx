@@ -152,9 +152,14 @@ export default function FarmerDashboard() {
             </div>
             <div>
               <Label className="text-xs font-semibold uppercase tracking-wider text-primary">Project Location</Label>
-              <div className="relative mt-1.5">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
-                <Input placeholder="GPS Coordinates or Address" value={location} onChange={(e) => setLocation(e.target.value)} className="pl-10 rounded-xl border-border bg-muted/50" />
+              <div className="relative mt-1.5 flex items-center gap-2">
+                <div className="relative flex-1">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
+                  <Input readOnly placeholder={locationLoading ? "Fetching GPS..." : "GPS Coordinates"} value={location} className="pl-10 rounded-xl border-border bg-muted/50 cursor-default" />
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={fetchLocation} disabled={locationLoading} className="rounded-xl shrink-0">
+                  {locationLoading ? "Fetching…" : "Refresh"}
+                </Button>
               </div>
             </div>
             <div>
