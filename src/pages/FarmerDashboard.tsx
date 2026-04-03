@@ -39,6 +39,24 @@ export default function FarmerDashboard() {
     }
   };
 
+  const fetchLocation = () => {
+    if (!navigator.geolocation) {
+      setLocation("Geolocation not supported");
+      return;
+    }
+    setLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocation(`${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`);
+        setLocationLoading(false);
+      },
+      () => {
+        setLocation("Unable to fetch location");
+        setLocationLoading(false);
+      }
+    );
+  };
+
   const handleSubmit = async () => {
     if (!treeCount) return;
     setLoading(true);
