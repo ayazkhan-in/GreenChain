@@ -1,7 +1,14 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
-import { BrowserProvider, type JsonRpcSigner } from "ethers";
+import { BrowserProvider, Contract, formatUnits, parseUnits, type JsonRpcSigner } from "ethers";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api";
+import {
+  GREEN_TOKEN_ABI,
+  GREEN_TOKEN_ADDRESS,
+  SEPOLIA_CHAIN_HEX,
+  SEPOLIA_CHAIN_ID,
+  etherscanTxUrl,
+} from "@/lib/contracts";
 
 export type UserRole = "project_developer" | "company" | "admin" | null;
 
@@ -17,7 +24,7 @@ interface Web3State {
   submitProject: (input: { trees: number; location?: string; files?: File[] }) => Promise<void>;
   verifyProject: (id: number, credits: number) => Promise<void>;
   getBalance: () => Promise<string>;
-  burnTokens: (amount: number) => Promise<{ quantity: number; certificateNo: string; retiredAt: string } | null>;
+  burnTokens: (amount: number) => Promise<{ quantity: number; certificateNo: string; retiredAt: string; txHash: string; txUrl: string } | null>;
 }
 
 const Web3Context = createContext<Web3State | null>(null);
@@ -32,6 +39,26 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     return stored || null;
   });
   const [isConnecting, setIsConnecting] = useState(false);
+
+  const ensureSepolia = useCallback(async () => {
+    const eth = (window as any).ethereum;
+    if (!eth) throw new Error("MetaMask not found");
+
+    const currentChain = await eth.request({ method: "eth_chainId" });
+    if (currentChain === SEPOLIA_CHAIN_HEX) return;
+
+    try {
+      await eth.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: SEPOLIA_CHAIN_HEX }],
+      });
+    } catch (switchError: any) {
+      if (switchError?.code === 4902) {
+        throw new Error("Sepolia is not added in MetaMask. Please add Sepolia and retry.");
+      }
+      throw switchError;
+    }
+  }, []);
 
   const setRole = useCallback(async (r: UserRole) => {
     if (!account) {
@@ -61,8 +88,13 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     setIsConnecting(true);
     try {
       const p = new BrowserProvider((window as any).ethereum);
+      await ensureSepolia();
       const accounts = await p.send("eth_requestAccounts", []);
       const s = await p.getSigner();
+      const network = await p.getNetwork();
+      if (Number(network.chainId) !== SEPOLIA_CHAIN_ID) {
+        throw new Error("Please connect MetaMask to Sepolia network");
+      }
       const walletAddress = accounts[0];
 
       const response = await apiRequest<{ success: boolean; data: { role: UserRole } }>("/auth/wallet-connect", {
@@ -94,7 +126,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     } finally {
       setIsConnecting(false);
     }
-  }, []);
+  }, [ensureSepolia]);
 
   const disconnectWallet = useCallback(() => {
     if (account) {
@@ -115,7 +147,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     if (!account) { toast.error("Connect wallet first"); return; }
 
     try {
-      const createResponse = await apiRequest<{ success: boolean; data: { id: number } }>("/projects", {
+      const createResponse = await apiRequest<{ success: boolean; data: { id: number; onChain?: { txHash?: string; txUrl?: string } } }>("/projects", {
         method: "POST",
         walletAddress: account,
         headers: { "Content-Type": "application/json" },
@@ -175,7 +207,8 @@ export function Web3Provider({ children }: { children: ReactNode }) {
         });
       }
 
-      toast.success("Project submitted successfully!");
+      const txLink = createResponse.data?.onChain?.txUrl;
+      toast.success(txLink ? `Project submitted. Tx: ${txLink}` : "Project submitted successfully!");
     } catch (e: any) {
       toast.error(e.message || "Failed to submit project");
     }
@@ -184,46 +217,73 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   const verifyProject = useCallback(async (id: number, credits: number) => {
     if (!account) { toast.error("Connect wallet first"); return; }
     try {
-      await apiRequest(`/admin/submissions/${id}/approve`, {
+      const response = await apiRequest<{ success: boolean; data?: { verifyTxUrl?: string; mintTxUrl?: string } }>(`/admin/submissions/${id}/approve`, {
         method: "POST",
         walletAddress: account,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ credits }),
       });
-      toast.success("Project verified and tokens minted!");
+      const verifyLink = response.data?.verifyTxUrl;
+      const mintLink = response.data?.mintTxUrl;
+      if (verifyLink && mintLink) {
+        toast.success(`Project verified. Verify Tx: ${verifyLink} | Mint Tx: ${mintLink}`);
+      } else if (verifyLink) {
+        toast.success(`Project verified. Verify Tx: ${verifyLink}`);
+      } else {
+        toast.success("Project verified and tokens minted!");
+      }
     } catch (e: any) {
       toast.error(e.message || "Failed to verify project");
     }
   }, [account]);
 
   const getBalance = useCallback(async (): Promise<string> => {
-    if (!account) return "0";
+    if (!account || !signer) return "0";
     try {
-      const response = await apiRequest<{ success: boolean; data: { balance: number } }>("/market/portfolio/summary", {
-        walletAddress: account,
-      });
-      return String(response.data.balance || 0);
+      const token = new Contract(GREEN_TOKEN_ADDRESS, GREEN_TOKEN_ABI, signer);
+      const [decimals, balance] = await Promise.all([token.decimals(), token.balanceOf(account)]);
+      return formatUnits(balance, Number(decimals));
     } catch {
       return "0";
     }
-  }, [account]);
+  }, [account, signer]);
 
   const burnTokens = useCallback(async (amount: number) => {
-    if (!account) { toast.error("Connect wallet first"); return; }
+    if (!account || !signer) { toast.error("Connect wallet first"); return; }
     try {
-      const response = await apiRequest<{ success: boolean; data: { quantity: number; certificateNo: string; retiredAt: string } }>("/market/credits/retire", {
+      if (!amount || amount <= 0) {
+        throw new Error("Enter a valid amount to retire");
+      }
+
+      await ensureSepolia();
+      const token = new Contract(GREEN_TOKEN_ADDRESS, GREEN_TOKEN_ABI, signer);
+      const decimals = Number(await token.decimals());
+      const burnAmount = parseUnits(String(amount), decimals);
+      const currentBalance = await token.balanceOf(account);
+
+      if (currentBalance < burnAmount) {
+        const available = formatUnits(currentBalance, decimals);
+        throw new Error(`Insufficient on-chain GCT balance. Available: ${available}`);
+      }
+
+      const burnTx = await token.burn(burnAmount);
+      await burnTx.wait();
+
+      const response = await apiRequest<{ success: boolean; data: { quantity: number; certificateNo: string; retiredAt: string; txHash: string; txUrl: string } }>("/market/credits/retire", {
         method: "POST",
         walletAddress: account,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quantity: amount }),
+        body: JSON.stringify({ quantity: amount, txHash: burnTx.hash }),
       });
-      toast.success("Credits retired successfully!");
+      const link = etherscanTxUrl(burnTx.hash);
+      toast.success(link ? `Credits retired. Tx: ${link}` : "Credits retired successfully!");
       return response.data;
     } catch (e: any) {
-      toast.error(e.message || "Failed to retire credits");
+      const msg = e?.reason || e?.shortMessage || e?.message || "Failed to retire credits";
+      toast.error(msg);
       return null;
     }
-  }, [account]);
+  }, [account, signer, ensureSepolia]);
 
   useEffect(() => {
     const eth = (window as any).ethereum;

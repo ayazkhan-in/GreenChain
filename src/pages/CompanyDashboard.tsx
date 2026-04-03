@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Coins, Leaf, Award, Flame } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api";
+import { Contract, parseUnits } from "ethers";
+import { GREEN_TOKEN_ABI, GREEN_TOKEN_ADDRESS, etherscanTxUrl } from "@/lib/contracts";
 
 type MarketListing = {
   id: number;
@@ -15,11 +17,13 @@ type MarketListing = {
   location: string;
   available_quantity: number;
   price_per_credit: number;
+  seller_wallet_address?: string;
 };
 
 type Tx = {
   id: number;
   tx_hash: string;
+  tx_url?: string;
   type: string;
   quantity: number;
   status: string;
@@ -29,12 +33,14 @@ type Tx = {
 type Retirement = {
   id: number;
   quantity: number;
+  burn_tx_hash?: string;
+  burn_tx_url?: string;
   certificate_no: string;
   created_at: string;
 };
 
 export default function CompanyDashboard() {
-  const { burnTokens, account, role } = useWeb3();
+  const { burnTokens, account, role, signer } = useWeb3();
   const [showRetire, setShowRetire] = useState(false);
   const [retireAmount, setRetireAmount] = useState("");
   const [loading, setLoading] = useState(false);
@@ -44,7 +50,7 @@ export default function CompanyDashboard() {
   const [transactions, setTransactions] = useState<Tx[]>([]);
   const [summary, setSummary] = useState({ totalPurchased: 0, totalRetired: 0, balance: 0 });
   const [retirements, setRetirements] = useState<Retirement[]>([]);
-  const [certificate, setCertificate] = useState<{ certificate_no: string; quantity: number; wallet_address: string; created_at: string } | null>(null);
+  const [certificate, setCertificate] = useState<{ certificateNo?: string; amount: number; wallet: string; timestamp: string; txHash?: string; txUrl?: string } | null>(null);
   const [profile, setProfile] = useState<{ totalProjects: number; totalTrees: number; totalCredits: number; totalRetirements: number } | null>(null);
 
   const loadData = async () => {
@@ -70,7 +76,7 @@ export default function CompanyDashboard() {
   const viewCertificate = async (retirementId: number) => {
     if (!account) return;
     try {
-      const certRes = await apiRequest<{ success: boolean; data: { quantity: number; certificate_no: string; wallet_address: string; created_at: string } }>(`/market/credits/retirements/${retirementId}/certificate`, {
+      const certRes = await apiRequest<{ success: boolean; data: { amount: number; certificateNo: string; wallet: string; timestamp: string; txHash: string; txUrl: string } }>(`/market/credits/retirements/${retirementId}/certificate`, {
         walletAddress: account,
       });
       setCertificate(certRes.data);
@@ -85,15 +91,52 @@ export default function CompanyDashboard() {
   }, [account]);
 
   const handleBuy = async (listingId: number) => {
-    if (!account) return;
+    if (!account || !signer) return;
     try {
+      const listing = marketProjects.find((item) => item.id === listingId);
+      if (!listing) {
+        throw new Error("Listing not found");
+      }
+
+      const sellerWallet = listing.seller_wallet_address;
+      if (!sellerWallet) {
+        throw new Error("Seller wallet not available for this listing");
+      }
+
+      const token = new Contract(GREEN_TOKEN_ADDRESS, GREEN_TOKEN_ABI, signer);
+      const decimals = Number(await token.decimals());
+      const quantity = 100;
+      const units = parseUnits(String(quantity), decimals);
+
+      if (sellerWallet.toLowerCase() === account.toLowerCase()) {
+        throw new Error("Seller and buyer wallet are the same for this listing.");
+      }
+
+      const [sellerBalance, buyerAllowance] = await Promise.all([
+        token.balanceOf(sellerWallet),
+        token.allowance(sellerWallet, account),
+      ]);
+
+      if (sellerBalance < units) {
+        throw new Error("Seller wallet does not have enough token balance for this purchase.");
+      }
+
+      if (buyerAllowance < units) {
+        throw new Error("Seller must approve your wallet first before you can buy these credits.");
+      }
+
+      const transferTx = await token.transferFrom(sellerWallet, account, units);
+      await transferTx.wait();
+
       await apiRequest("/market/purchase", {
         method: "POST",
         walletAddress: account,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ listingId, quantity: 100 }),
+        body: JSON.stringify({ listingId, quantity, txHash: transferTx.hash }),
       });
-      toast.success("Purchased 100 credits successfully");
+
+      const link = etherscanTxUrl(transferTx.hash);
+      toast.success(link ? `Purchase completed. Tx: ${link}` : "Purchased 100 credits successfully");
       await loadData();
     } catch (e: any) {
       toast.error(e.message || "Purchase failed");
@@ -109,10 +152,12 @@ export default function CompanyDashboard() {
     await loadData();
     if (retirementResult) {
       setCertificate({
-        certificate_no: retirementResult.certificateNo,
-        quantity: retirementResult.quantity,
-        wallet_address: account || "",
-        created_at: retirementResult.retiredAt,
+        certificateNo: retirementResult.certificateNo,
+        amount: retirementResult.quantity,
+        wallet: account || "",
+        timestamp: retirementResult.retiredAt,
+        txHash: retirementResult.txHash,
+        txUrl: retirementResult.txUrl,
       });
       setShowCert(true);
     }
@@ -211,7 +256,13 @@ export default function CompanyDashboard() {
                 <tbody className="divide-y divide-border">
                   {transactions.map((t) => (
                     <tr key={t.id} className="hover:bg-accent/50 transition-colors">
-                      <td className="px-6 py-4 text-sm font-mono text-muted-foreground">{t.tx_hash || "-"}</td>
+                      <td className="px-6 py-4 text-sm font-mono text-muted-foreground">
+                        {t.tx_url ? (
+                          <a href={t.tx_url} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
+                            {t.tx_hash || "-"}
+                          </a>
+                        ) : (t.tx_hash || "-")}
+                      </td>
                       <td className="px-6 py-4 text-sm font-semibold text-foreground">{t.type === "purchase" ? "Marketplace" : "Offset Pool"}</td>
                       <td className="px-6 py-4 text-sm text-muted-foreground">{t.type}</td>
                       <td className={`px-6 py-4 text-sm font-semibold ${t.type === "purchase" ? "text-primary" : "text-destructive"}`}>{t.type === "purchase" ? "+" : "-"}{t.quantity} VCC</td>
@@ -284,19 +335,29 @@ export default function CompanyDashboard() {
             <div className="mt-6 space-y-3 text-sm text-left rounded-xl bg-muted/50 p-5">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Wallet</span>
-                <span className="font-mono font-semibold text-foreground">{certificate?.wallet_address ? `${certificate.wallet_address.slice(0, 6)}...${certificate.wallet_address.slice(-4)}` : account ? `${account.slice(0, 6)}...${account.slice(-4)}` : "0x71C...39A2"}</span>
+                <span className="font-mono font-semibold text-foreground">{certificate?.wallet ? `${certificate.wallet.slice(0, 6)}...${certificate.wallet.slice(-4)}` : account ? `${account.slice(0, 6)}...${account.slice(-4)}` : "0x71C...39A2"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Credits Retired</span>
-                <span className="font-bold text-foreground">{certificate?.quantity || retireAmount || "500"} VCC</span>
+                <span className="font-bold text-foreground">{certificate?.amount || retireAmount || "500"} VCC</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Certificate No</span>
-                <span className="font-mono font-semibold text-foreground">{certificate?.certificate_no || "-"}</span>
+                <span className="font-mono font-semibold text-foreground">{certificate?.certificateNo || "-"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Burn Tx</span>
+                {certificate?.txUrl ? (
+                  <a href={certificate.txUrl} target="_blank" rel="noreferrer" className="font-mono font-semibold text-foreground underline-offset-2 hover:underline">
+                    {certificate.txHash?.slice(0, 10)}...
+                  </a>
+                ) : (
+                  <span className="font-mono font-semibold text-foreground">-</span>
+                )}
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Timestamp</span>
-                <span className="text-foreground">{certificate?.created_at ? new Date(certificate.created_at).toLocaleString() : new Date().toLocaleString()}</span>
+                <span className="text-foreground">{certificate?.timestamp ? new Date(certificate.timestamp).toLocaleString() : new Date().toLocaleString()}</span>
               </div>
             </div>
             <Button className="mt-6 rounded-full px-8" onClick={() => setShowCert(false)}>Close</Button>
