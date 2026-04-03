@@ -79,7 +79,7 @@ export default function FarmerDashboard() {
               <span className="h-2 w-2 rounded-full bg-primary" />
               <span className="text-xs font-semibold uppercase tracking-wider text-primary">Active Session</span>
             </div>
-            <Button onClick={() => setShowModal(true)} className="rounded-full">Submit Project</Button>
+            <Button onClick={() => { setShowModal(true); fetchLocation(); }} className="rounded-full">Submit Project</Button>
           </div>
 
           <div className="grid md:grid-cols-3 gap-6 mb-10">
