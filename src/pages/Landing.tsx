@@ -25,17 +25,11 @@ export default function Landing() {
             The leading decentralized infrastructure connecting regenerative agriculture with global corporate liquidity.
           </p>
           <div className="mt-8 flex items-center justify-center gap-4">
-            {account ? (
-              <Button asChild size="lg" className="rounded-full px-8">
-                <Link to="/role-select">Get Started</Link>
-              </Button>
-            ) : (
-              <Button size="lg" className="rounded-full px-8" onClick={connectWallet} disabled={isConnecting}>
-                {isConnecting ? "Connecting..." : "Get Started"}
-              </Button>
-            )}
-            <Button variant="outline" size="lg" className="rounded-full px-8" onClick={connectWallet}>
-              Connect Wallet
+            <Button asChild size="lg" className="rounded-full px-8">
+              <Link to="/connect">Get Started</Link>
+            </Button>
+            <Button variant="outline" size="lg" className="rounded-full px-8" asChild>
+              <Link to="/connect">Connect Wallet</Link>
             </Button>
           </div>
         </div>
@@ -118,7 +112,7 @@ export default function Landing() {
             </p>
             <div className="mt-8 flex items-center justify-center gap-4">
               <Button variant="secondary" size="lg" className="rounded-full px-8" asChild>
-                <Link to={account ? "/role-select" : "#"} onClick={!account ? connectWallet : undefined}>Launch Application</Link>
+                <Link to="/connect">Launch Application</Link>
               </Button>
               <Button variant="outline" size="lg" className="rounded-full px-8 border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">
                 View Ecosystem
