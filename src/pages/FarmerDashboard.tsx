@@ -51,7 +51,6 @@ export default function FarmerDashboard() {
             ))}
           </nav>
           <div className="space-y-2 mt-auto">
-            <Button className="w-full rounded-full">Mint Credits</Button>
             <button className="w-full text-left px-4 py-2 text-sm text-muted-foreground hover:text-foreground">Settings</button>
             <button className="w-full text-left px-4 py-2 text-sm text-muted-foreground hover:text-foreground">Support</button>
           </div>
