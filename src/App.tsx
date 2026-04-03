@@ -11,6 +11,7 @@ import Landing from "@/pages/Landing";
 import ConnectWallet from "@/pages/ConnectWallet";
 import DashboardRoute from "@/components/DashboardRoute";
 import CompanyDashboard from "@/pages/CompanyDashboard";
+import CompanyMarketplace from "@/pages/CompanyMarketplace";
 import AdminPanel from "@/pages/AdminPanel";
 import NotFound from "@/pages/NotFound";
 
@@ -28,7 +29,7 @@ const App = () => (
             <Route path="/" element={<Landing />} />
             <Route path="/connect" element={<ConnectWallet />} />
             <Route path="/dashboard" element={<RoleRoute allow={["project_developer", "company"]}><DashboardRoute /></RoleRoute>} />
-            <Route path="/marketplace" element={<RoleRoute allow={["project_developer", "company"]}><CompanyDashboard /></RoleRoute>} />
+            <Route path="/marketplace" element={<RoleRoute allow={["company"]}><CompanyMarketplace /></RoleRoute>} />
             <Route path="/company" element={<RoleRoute allow={["company"]}><CompanyDashboard /></RoleRoute>} />
             <Route path="/admin" element={<RoleRoute allow={["admin"]}><AdminPanel /></RoleRoute>} />
             <Route path="*" element={<NotFound />} />

@@ -4,26 +4,50 @@ import { useWeb3 } from "@/context/Web3Context";
 import StatusBadge from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CheckCircle, BarChart3, Globe, ChevronLeft, ChevronRight } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { CheckCircle, BarChart3, Globe, ChevronLeft, ChevronRight, Trees, Leaf } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api";
 import { containerVariants, itemVariants, staggerContainer, staggerItem } from "@/lib/animations";
+
+// Tree types with CO2 multipliers (kg CO2 per tree per year)
+const TREE_TYPES = [
+  { id: "oak", name: "Oak", multiplier: 21.77 },
+  { id: "pine", name: "Pine", multiplier: 18.41 },
+  { id: "maple", name: "Maple", multiplier: 19.65 },
+  { id: "birch", name: "Birch", multiplier: 15.32 },
+  { id: "spruce", name: "Spruce", multiplier: 20.12 },
+  { id: "beech", name: "Beech", multiplier: 22.45 },
+  { id: "ash", name: "Ash", multiplier: 17.89 },
+  { id: "mangrove", name: "Mangrove", multiplier: 27.65 },
+];
+
+const BASE_TOKEN_RATE = 0.5; // Credits per kg of CO2 per year
 
 type Submission = {
   id: number;
   wallet_address: string;
   trees_count: number;
+  tree_type?: string;
+  project_name?: string;
   submitted_at: string;
   status: string;
 };
 
 export default function AdminPanel() {
   const { verifyProject, account } = useWeb3();
-  const [credits, setCredits] = useState<Record<number, string>>({});
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [stats, setStats] = useState({ pending: 0, verifiedToday: 0 });
+
+  const calculateExpectedCredits = (submission: Submission) => {
+    const treeType = submission.tree_type || "oak";
+    const selectedTree = TREE_TYPES.find(t => t.id === treeType);
+    if (!selectedTree) return 0;
+    const co2Total = submission.trees_count * selectedTree.multiplier;
+    return Math.round(co2Total * BASE_TOKEN_RATE);
+  };
 
   const loadData = async () => {
     if (!account) return;
@@ -45,10 +69,15 @@ export default function AdminPanel() {
   }, [account]);
 
   const handleApprove = async (id: number) => {
-    const c = Number(credits[id] || 0);
-    if (!c) { toast.error("Enter credit amount first"); return; }
+    const submission = submissions.find(s => s.id === id);
+    if (!submission) return;
+    const creditsToAllot = calculateExpectedCredits(submission);
+    if (!creditsToAllot) { 
+      toast.error("Invalid credits calculation"); 
+      return; 
+    }
     setLoadingId(id);
-    await verifyProject(id, c);
+    await verifyProject(id, creditsToAllot);
     setLoadingId(null);
     await loadData();
   };
@@ -95,7 +124,7 @@ export default function AdminPanel() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                {["Developer Address", "Trees Planted", "Date Submitted", "Status", "Assign Credits", "Actions"].map((h) => (
+                {["Project Name", "Developer", "Trees", "Type", "Expected Credits", "Submitted", "Status", "Actions"].map((h) => (
                   <th key={h} className="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
                 ))}
               </tr>
@@ -103,22 +132,29 @@ export default function AdminPanel() {
             <tbody className="divide-y divide-border">
               {submissions.map((s) => (
                 <tr key={s.id} className="hover:bg-accent/50 transition-colors">
+                  <td className="px-6 py-4 text-sm font-semibold text-foreground">{s.project_name || "Unnamed Project"}</td>
                   <td className="px-6 py-4 flex items-center gap-2">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-primary">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-primary text-xs">
                       <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                     </div>
-                    <span className="text-sm font-mono text-muted-foreground">{`${s.wallet_address.slice(0, 6)}...${s.wallet_address.slice(-4)}`}</span>
+                    <span className="text-xs font-mono text-muted-foreground">{`${s.wallet_address.slice(0, 6)}...${s.wallet_address.slice(-4)}`}</span>
                   </td>
                   <td className="px-6 py-4 text-sm font-bold text-primary">{s.trees_count.toLocaleString()}</td>
+                  <td className="px-6 py-4">
+                    <Badge variant="secondary" className="text-xs gap-1">
+                      <Leaf className="h-3 w-3" />
+                      {TREE_TYPES.find(t => t.id === s.tree_type)?.name || "Oak"}
+                    </Badge>
+                  </td>
+                  <td className="px-6 py-4 text-sm font-semibold text-foreground">
+                    {calculateExpectedCredits(s)} <span className="text-xs text-muted-foreground">VCC</span>
+                  </td>
                   <td className="px-6 py-4 text-sm text-muted-foreground">{new Date(s.submitted_at).toLocaleDateString()}</td>
                   <td className="px-6 py-4"><StatusBadge status={s.status === "verified" ? "verified" : "pending"} /></td>
                   <td className="px-6 py-4">
-                    <Input type="number" placeholder="0.00" value={credits[s.id] || ""} onChange={(e) => setCredits({ ...credits, [s.id]: e.target.value })} className="w-24 rounded-lg" />
-                  </td>
-                  <td className="px-6 py-4">
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" className="rounded-full" onClick={() => handleReject(s.id)}>Reject</Button>
-                      <Button size="sm" className="rounded-full" onClick={() => handleApprove(s.id)} disabled={loadingId === s.id}>
+                      <Button variant="outline" size="sm" className="rounded-full text-xs" onClick={() => handleReject(s.id)}>Reject</Button>
+                      <Button size="sm" className="rounded-full text-xs" onClick={() => handleApprove(s.id)} disabled={loadingId === s.id}>
                         {loadingId === s.id ? "..." : "Approve"}
                       </Button>
                     </div>

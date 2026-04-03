@@ -8,7 +8,6 @@ export default function Footer() {
           <Leaf className="h-5 w-5 text-primary" />
           <span className="font-bold text-foreground">GreenChain</span>
         </div>
-        <p className="text-xs text-muted-foreground">© 2024 GREENCHAIN DIGITAL BIOME. ALL RIGHTS RESERVED.</p>
         <div className="flex gap-6">
           {["ABOUT", "TERMS", "PRIVACY", "SOCIALS"].map((l) => (
             <a key={l} href="#" className="text-xs font-medium text-muted-foreground hover:text-primary transition-colors">{l}</a>

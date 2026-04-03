@@ -28,10 +28,14 @@ export default function ConnectWallet() {
 
   const handleContinue = async () => {
     if (!selectedRole) return;
-    await setRole(selectedRole);
-    if (selectedRole === "project_developer") navigate("/dashboard");
-    else if (selectedRole === "company") navigate("/marketplace");
-    else if (selectedRole === "admin") navigate("/admin");
+    try {
+      await setRole(selectedRole);
+      if (selectedRole === "project_developer") navigate("/dashboard");
+      else if (selectedRole === "company") navigate("/marketplace");
+      else if (selectedRole === "admin") navigate("/admin");
+    } catch (error) {
+      // Error is already handled by setRole toast
+    }
   };
 
   return (

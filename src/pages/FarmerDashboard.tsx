@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TreePine, Coins, DollarSign, ChevronRight, Upload, MapPin, Trees, Info, ShieldCheck, LineChart as LineChartIcon } from "lucide-react";
 import { toast } from "sonner";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, API_BASE_URL } from "@/lib/api";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import { containerVariants, itemVariants, staggerContainer, staggerItem } from "@/lib/animations";
@@ -51,10 +51,26 @@ type PublicProfile = {
   total_credits: number;
 };
 
+// Tree types with CO2 multipliers (kg CO2 per tree per year)
+const TREE_TYPES = [
+  { id: "oak", name: "Oak", multiplier: 21.77, description: "High CO2 sequestration" },
+  { id: "pine", name: "Pine", multiplier: 18.41, description: "Fast-growing, reliable" },
+  { id: "maple", name: "Maple", multiplier: 19.65, description: "Excellent for temperate zones" },
+  { id: "birch", name: "Birch", multiplier: 15.32, description: "Hardy species" },
+  { id: "spruce", name: "Spruce", multiplier: 20.12, description: "Strong CO2 absorber" },
+  { id: "beech", name: "Beech", multiplier: 22.45, description: "Premium sequestration" },
+  { id: "ash", name: "Ash", multiplier: 17.89, description: "Versatile species" },
+  { id: "mangrove", name: "Mangrove", multiplier: 27.65, description: "Coastal champion" },
+];
+
+const BASE_TOKEN_RATE = 0.5; // Credits per kg of CO2 per year
+
 export default function FarmerDashboard() {
   const { submitProject, account } = useWeb3();
   const [showModal, setShowModal] = useState(false);
+  const [projectName, setProjectName] = useState("");
   const [treeCount, setTreeCount] = useState("");
+  const [treeType, setTreeType] = useState("oak");
   const [location, setLocation] = useState("");
   const [locationLoading, setLocationLoading] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -126,20 +142,72 @@ export default function FarmerDashboard() {
   };
 
   const handleSubmit = async () => {
-    if (!treeCount) return;
+    if (!projectName || !treeCount || !treeType) {
+      toast.error("Please fill in all fields");
+      return;
+    }
 
     setLoading(true);
-    await submitProject({
-      trees: Number(treeCount),
-      location,
-      files,
-    });
-    setLoading(false);
-    setShowModal(false);
-    setTreeCount("");
-    setLocation("");
-    setFiles([]);
-    await loadData();
+    try {
+      const formData = new FormData();
+      formData.append("name", projectName);
+      formData.append("trees", treeCount);
+      formData.append("treeType", treeType);
+      formData.append("location", location);
+      
+      // Append files
+      for (const file of files) {
+        formData.append("files", file);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/projects`, {
+        method: "POST",
+        headers: {
+          "X-Wallet-Address": account || "",
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        let errorMessage = "Failed to submit project";
+        try {
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const error = await response.json();
+            errorMessage = error.message || errorMessage;
+          } else {
+            const text = await response.text();
+            errorMessage = text || `Error ${response.status}: ${response.statusText}`;
+          }
+        } catch (parseError) {
+          errorMessage = `Error ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const result = await response.json();
+      toast.success("Project submitted successfully!");
+      setShowModal(false);
+      setProjectName("");
+      setTreeCount("");
+      setTreeType("oak");
+      setLocation("");
+      setFiles([]);
+      await loadData();
+    } catch (e: any) {
+      console.error("Submit error:", e);
+      toast.error(e.message || "Failed to submit project");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const calculateExpectedCredits = () => {
+    if (!treeCount || !treeType) return 0;
+    const selectedTree = TREE_TYPES.find(t => t.id === treeType);
+    if (!selectedTree) return 0;
+    const co2Total = Number(treeCount) * selectedTree.multiplier;
+    return Math.round(co2Total * BASE_TOKEN_RATE);
   };
 
   const openProjectDetail = async (projectId: number) => {
@@ -407,19 +475,52 @@ export default function FarmerDashboard() {
       </div>
 
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl font-black text-primary">Submit Project</DialogTitle>
             <p className="text-xs font-semibold uppercase tracking-wider text-primary">Verification Portal V1.0</p>
           </DialogHeader>
-          <div className="space-y-5 mt-4">
+          <div className="space-y-3 mt-4">
             <div>
-              <Label className="text-xs font-semibold uppercase tracking-wider text-primary">Number of Trees</Label>
+              <Label className="text-xs font-semibold uppercase tracking-wider text-primary">Project Name</Label>
               <div className="relative mt-1.5">
-                <Trees className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
-                <Input placeholder="e.g. 500" value={treeCount} onChange={(e) => setTreeCount(e.target.value)} className="pl-10 rounded-xl border-border bg-muted/50" type="number" />
+                <Input placeholder="e.g. North Valley Restoration" value={projectName} onChange={(e) => setProjectName(e.target.value)} className="rounded-xl border-border bg-muted/50" />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs font-semibold uppercase tracking-wider text-primary">Number of Trees</Label>
+                <div className="relative mt-1.5">
+                  <Trees className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
+                  <Input placeholder="e.g. 500" value={treeCount} onChange={(e) => setTreeCount(e.target.value)} className="pl-10 rounded-xl border-border bg-muted/50" type="number" />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs font-semibold uppercase tracking-wider text-primary">Tree Type</Label>
+                <div className="mt-1.5">
+                  <select value={treeType} onChange={(e) => setTreeType(e.target.value)} className="w-full rounded-xl border border-border bg-muted/50 px-4 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all">
+                    {TREE_TYPES.map((tree) => (
+                      <option key={tree.id} value={tree.id}>
+                        {tree.name} ({tree.multiplier} kg CO2/year)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+            {treeType && treeCount && (
+              <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl bg-secondary/30 border border-primary/30 p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Expected Credits</p>
+                    <p className="text-2xl font-bold text-primary">{calculateExpectedCredits()} VCC</p>
+                  </div>
+                  <div className="text-right text-xs text-muted-foreground">
+                    {Number(treeCount)} trees × {TREE_TYPES.find(t => t.id === treeType)?.multiplier} kg CO2/year × {BASE_TOKEN_RATE} credits
+                  </div>
+                </div>
+              </motion.div>
+            )}
             <div>
               <Label className="text-xs font-semibold uppercase tracking-wider text-primary">Project Location</Label>
               <div className="relative mt-1.5 flex items-center gap-2">
@@ -435,7 +536,7 @@ export default function FarmerDashboard() {
             <div>
               <Label className="text-xs font-semibold uppercase tracking-wider text-primary">Site Documentation</Label>
               <div
-                className="mt-1.5 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/30 p-8 text-center cursor-pointer hover:border-primary/50 transition-colors relative"
+                className="mt-1.5 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/20 p-6 text-center cursor-pointer hover:border-primary/60 hover:bg-muted/30 transition-all relative"
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleDrop}
                 onClick={() => document.getElementById("file-upload")?.click()}
@@ -451,32 +552,34 @@ export default function FarmerDashboard() {
                 {files.length > 0 ? (
                   <div className="space-y-2 w-full">
                     {files.map((f, i) => (
-                      <div key={i} className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm">
-                        <Upload className="h-4 w-4 text-primary shrink-0" />
+                      <div key={i} className="flex items-center gap-2 rounded-lg bg-secondary/60 px-3 py-2 text-xs">
+                        <Upload className="h-3 w-3 text-primary shrink-0" />
                         <span className="text-foreground truncate">{f.name}</span>
                         <span className="text-muted-foreground text-xs ml-auto shrink-0">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
                       </div>
                     ))}
-                    <p className="text-xs text-muted-foreground mt-1">Click or drop to add more</p>
+                    <p className="text-xs text-muted-foreground mt-2">Click or drop to add more files</p>
                   </div>
                 ) : (
                   <>
-                    <Upload className="h-8 w-8 text-primary mb-2" />
-                    <p className="font-semibold text-primary text-sm">Drop high-resolution imagery</p>
-                    <p className="text-xs text-muted-foreground">PDF, PNG, JPG, WEBP (Max 10MB each)</p>
+                    <Upload className="h-6 w-6 text-primary mb-2 opacity-60" />
+                    <p className="font-semibold text-foreground text-xs">Drop high-resolution imagery</p>
+                    <p className="text-xs text-muted-foreground mt-1">PDF, PNG, JPG, WEBP (Max 10MB each)</p>
                   </>
                 )}
               </div>
             </div>
-            <div className="rounded-xl bg-muted/50 p-4 flex items-start gap-3">
+            <div className="rounded-xl bg-muted/50 p-3 flex items-start gap-2">
               <Info className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-              <p className="text-xs text-muted-foreground">All submissions undergo automated satellite verification and manual peer review within the GreenChain biome. Ensure images show clear canopy visibility.</p>
+              <p className="text-xs text-muted-foreground">Credits are calculated automatically based on tree type and count. All submissions undergo satellite verification and peer review.</p>
             </div>
-            <div className="flex items-center gap-4">
-              <Button onClick={handleSubmit} disabled={loading} className="flex-1 rounded-xl h-12">
-                {loading ? "Submitting..." : "Submit for Verification"}
+            <div className="flex items-center gap-3 pt-2">
+              <Button onClick={handleSubmit} disabled={loading || !projectName || !treeCount} className="flex-1 rounded-xl h-10">
+                {loading ? "Submitting..." : `Submit (${calculateExpectedCredits()} VCC)`}
               </Button>
-              <Button variant="ghost" onClick={() => setShowModal(false)}>Save as Draft</Button>
+              <Button variant="outline" onClick={() => { setShowModal(false); setProjectName(""); setTreeCount(""); setTreeType("oak"); }} className="rounded-xl">
+                Cancel
+              </Button>
             </div>
           </div>
         </DialogContent>

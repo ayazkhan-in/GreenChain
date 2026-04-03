@@ -150,8 +150,8 @@ export default function Landing() {
                 className="absolute bottom-6 left-6 rounded-2xl bg-green-500 px-6 py-4 shadow-lg"
                 whileHover={{ scale: 1.05 }}
               >
-                <p className="text-3xl font-black text-white">1.2M+</p>
-                <p className="text-xs font-bold uppercase tracking-wider text-green-100">Trees Verified On-Chain</p>
+                <p className="text-3xl font-black text-white">Secure</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-green-100">on BlockChain</p>
               </motion.div>
             </motion.div>
             <motion.div variants={itemVariants}>
