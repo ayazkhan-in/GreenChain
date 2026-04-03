@@ -22,6 +22,7 @@ export default function FarmerDashboard() {
   const [showModal, setShowModal] = useState(false);
   const [treeCount, setTreeCount] = useState("");
   const [location, setLocation] = useState("");
+  const [locationLoading, setLocationLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
 
@@ -36,6 +37,24 @@ export default function FarmerDashboard() {
     if (e.dataTransfer.files) {
       setFiles(Array.from(e.dataTransfer.files));
     }
+  };
+
+  const fetchLocation = () => {
+    if (!navigator.geolocation) {
+      setLocation("Geolocation not supported");
+      return;
+    }
+    setLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocation(`${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`);
+        setLocationLoading(false);
+      },
+      () => {
+        setLocation("Unable to fetch location");
+        setLocationLoading(false);
+      }
+    );
   };
 
   const handleSubmit = async () => {
@@ -78,7 +97,7 @@ export default function FarmerDashboard() {
               <span className="h-2 w-2 rounded-full bg-primary" />
               <span className="text-xs font-semibold uppercase tracking-wider text-primary">Active Session</span>
             </div>
-            <Button onClick={() => setShowModal(true)} className="rounded-full">Submit Project</Button>
+            <Button onClick={() => { setShowModal(true); fetchLocation(); }} className="rounded-full">Submit Project</Button>
           </div>
 
           <div className="grid md:grid-cols-3 gap-6 mb-10">
@@ -133,9 +152,14 @@ export default function FarmerDashboard() {
             </div>
             <div>
               <Label className="text-xs font-semibold uppercase tracking-wider text-primary">Project Location</Label>
-              <div className="relative mt-1.5">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
-                <Input placeholder="GPS Coordinates or Address" value={location} onChange={(e) => setLocation(e.target.value)} className="pl-10 rounded-xl border-border bg-muted/50" />
+              <div className="relative mt-1.5 flex items-center gap-2">
+                <div className="relative flex-1">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
+                  <Input readOnly placeholder={locationLoading ? "Fetching GPS..." : "GPS Coordinates"} value={location} className="pl-10 rounded-xl border-border bg-muted/50 cursor-default" />
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={fetchLocation} disabled={locationLoading} className="rounded-xl shrink-0">
+                  {locationLoading ? "Fetching…" : "Refresh"}
+                </Button>
               </div>
             </div>
             <div>
