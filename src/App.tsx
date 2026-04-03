@@ -8,11 +8,9 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import Landing from "@/pages/Landing";
 import ConnectWallet from "@/pages/ConnectWallet";
-import RoleSelect from "@/pages/RoleSelect";
 import FarmerDashboard from "@/pages/FarmerDashboard";
 import CompanyDashboard from "@/pages/CompanyDashboard";
 import AdminPanel from "@/pages/AdminPanel";
-import Marketplace from "@/pages/Marketplace";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,11 +26,10 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/connect" element={<ConnectWallet />} />
-            <Route path="/role-select" element={<RoleSelect />} />
             <Route path="/dashboard" element={<FarmerDashboard />} />
+            <Route path="/marketplace" element={<CompanyDashboard />} />
             <Route path="/company" element={<CompanyDashboard />} />
             <Route path="/admin" element={<AdminPanel />} />
-            <Route path="/marketplace" element={<Marketplace />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
           <Footer />

@@ -5,6 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
+const roleLabels: Record<string, string> = {
+  project_developer: "Project Developer",
+  company: "Company",
+  admin: "Admin",
+};
+
 export default function Navbar() {
   const { account, role, connectWallet, isConnecting } = useWeb3();
   const location = useLocation();
@@ -48,7 +54,7 @@ export default function Navbar() {
             <>
               {role && (
                 <Badge variant="secondary" className="capitalize">
-                  {role}
+                  {roleLabels[role] || role}
                 </Badge>
               )}
               <button

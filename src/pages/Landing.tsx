@@ -52,7 +52,7 @@ export default function Landing() {
           </p>
           <div className="mt-12 grid md:grid-cols-3 gap-6">
             {[
-              { icon: <Coins className="h-6 w-6" />, title: "Yield Generation", desc: "Farmers earn direct digital asset yields for verified ecological restoration efforts.", link: "Explore Yields" },
+              { icon: <Coins className="h-6 w-6" />, title: "Yield Generation", desc: "Project developers earn direct digital asset yields for verified ecological restoration efforts.", link: "Explore Yields" },
               { icon: <Shield className="h-6 w-6" />, title: "Asset Liquidity", desc: "Permissionless secondary markets provide instant settlement for corporate offsets.", link: "Trade Now" },
               { icon: <Leaf className="h-6 w-6" />, title: "On-Chain Proof", desc: "Immutable verification records eliminate the risk of double-spending offsets.", link: "View Protocol" },
             ].map((f) => (
