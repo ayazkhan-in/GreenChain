@@ -24,9 +24,9 @@ export default function ConnectWallet() {
     setSelectedRole(role);
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!selectedRole) return;
-    setRole(selectedRole);
+    await setRole(selectedRole);
     if (selectedRole === "project_developer") navigate("/dashboard");
     else if (selectedRole === "company") navigate("/marketplace");
     else if (selectedRole === "admin") navigate("/admin");
@@ -123,7 +123,7 @@ export default function ConnectWallet() {
             </div>
             <div className="flex justify-center">
               <Button
-                onClick={handleContinue}
+                onClick={() => void handleContinue()}
                 disabled={!selectedRole}
                 size="lg"
                 className="rounded-full px-12 h-12 text-base gap-2"

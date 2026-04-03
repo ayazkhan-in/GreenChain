@@ -17,11 +17,20 @@ export default function Navbar() {
 
   const truncate = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 
-  const navLinks = [
-    { to: "/dashboard", label: "Dashboard" },
-    { to: "/marketplace", label: "Marketplace" },
-    ...(role === "admin" ? [{ to: "/admin", label: "Admin" }] : []),
-  ];
+  const navLinks =
+    role === "admin"
+      ? [{ to: "/admin", label: "Admin" }]
+      : role === "company"
+        ? [
+            { to: "/dashboard", label: "Dashboard" },
+            { to: "/marketplace", label: "Marketplace" },
+          ]
+        : role === "project_developer"
+          ? [
+              { to: "/dashboard", label: "Dashboard" },
+              { to: "/marketplace", label: "Marketplace" },
+            ]
+          : [];
 
   const isActive = (path: string) => location.pathname === path;
 

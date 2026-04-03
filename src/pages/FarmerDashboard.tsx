@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWeb3 } from "@/context/Web3Context";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
@@ -7,15 +7,45 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TreePine, Coins, DollarSign, ChevronRight, Upload, MapPin, Trees, Info } from "lucide-react";
-import amazonImg from "@/assets/amazon-basin.jpg";
-import pineImg from "@/assets/northern-pine.jpg";
-import borealImg from "@/assets/boreal-forest.jpg";
+import { toast } from "sonner";
+import { apiRequest } from "@/lib/api";
 
-const projects = [
-  { id: 1, name: "Amazon Basin Restoration", code: "GC-4492-B", trees: 4500, credits: "1,200 GRC", status: "verified" as const, img: amazonImg },
-  { id: 2, name: "Northern Pine Initiative", code: "GC-9912-X", trees: 8340, credits: "3,050 GRC", status: "pending" as const, img: pineImg },
-  { id: 3, name: "Boreal Growth Reserve", code: "GC-2104-Z", trees: 12100, credits: "Pending", status: "verified" as const, img: borealImg },
-];
+type FarmerProject = {
+  id: number;
+  project_code: string;
+  name: string;
+  trees_count: number;
+  assigned_credits: number;
+  status: string;
+  files: { url: string; fileType: string }[];
+};
+
+type ProjectDetail = FarmerProject & {
+  latitude: number | null;
+  longitude: number | null;
+  submitted_at: string;
+  reviewed_at: string | null;
+  rejection_reason: string | null;
+};
+
+type ReviewStatus = {
+  id: number;
+  status: string;
+  assigned_credits: number;
+  rejection_reason: string | null;
+  reviewed_at: string | null;
+  developer_wallet: string;
+  reviews: { decision: string; creditsAssigned: number; reason: string | null; createdAt: string }[];
+};
+
+type PublicProfile = {
+  wallet_address: string;
+  role: string;
+  created_at: string;
+  total_projects: number;
+  total_trees: number;
+  total_credits: number;
+};
 
 export default function FarmerDashboard() {
   const { submitProject, account } = useWeb3();
@@ -25,6 +55,29 @@ export default function FarmerDashboard() {
   const [locationLoading, setLocationLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [projects, setProjects] = useState<FarmerProject[]>([]);
+  const [stats, setStats] = useState({ totalTrees: 0, totalCredits: 0 });
+  const [selectedProject, setSelectedProject] = useState<ProjectDetail | null>(null);
+  const [selectedReview, setSelectedReview] = useState<ReviewStatus | null>(null);
+  const [selectedProfile, setSelectedProfile] = useState<PublicProfile | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  const loadData = async () => {
+    if (!account) return;
+    try {
+      const response = await apiRequest<{ success: boolean; data: { projects: FarmerProject[]; stats: { totalTrees: number; totalCredits: number } } }>("/projects/my", {
+        walletAddress: account,
+      });
+      setProjects(response.data.projects || []);
+      setStats(response.data.stats || { totalTrees: 0, totalCredits: 0 });
+    } catch (e: any) {
+      toast.error(e.message || "Failed to load projects");
+    }
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, [account]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -60,12 +113,36 @@ export default function FarmerDashboard() {
   const handleSubmit = async () => {
     if (!treeCount) return;
     setLoading(true);
-    await submitProject(Number(treeCount));
+    await submitProject({
+      trees: Number(treeCount),
+      location,
+      files,
+    });
     setLoading(false);
     setShowModal(false);
     setTreeCount("");
     setLocation("");
     setFiles([]);
+    await loadData();
+  };
+
+  const openProjectDetail = async (projectId: number) => {
+    if (!account) return;
+    try {
+      const [projectRes, reviewRes] = await Promise.all([
+        apiRequest<{ success: boolean; data: ProjectDetail }>(`/projects/${projectId}`, { walletAddress: account }),
+        apiRequest<{ success: boolean; data: ReviewStatus }>(`/projects/${projectId}/review-status`, { walletAddress: account }),
+      ]);
+      const publicProfileRes = await apiRequest<{ success: boolean; data: PublicProfile }>(`/users/${reviewRes.data.developer_wallet}/public`, {
+        walletAddress: account,
+      });
+      setSelectedProject(projectRes.data);
+      setSelectedReview(reviewRes.data);
+      setSelectedProfile(publicProfileRes.data);
+      setDetailOpen(true);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to load project details");
+    }
   };
 
   return (
@@ -101,9 +178,9 @@ export default function FarmerDashboard() {
           </div>
 
           <div className="grid md:grid-cols-3 gap-6 mb-10">
-            <StatCard icon={<TreePine className="h-5 w-5" />} label="Total Trees Planted" value="12,840" badge="+12% Month" />
-            <StatCard icon={<Coins className="h-5 w-5" />} label="Credits Earned" value="4,250" badge="Available" />
-            <StatCard icon={<DollarSign className="h-5 w-5" />} label="Total Earnings" value="$84,120" badge="USD Value" />
+            <StatCard icon={<TreePine className="h-5 w-5" />} label="Total Trees Planted" value={stats.totalTrees.toLocaleString()} badge="Live" />
+            <StatCard icon={<Coins className="h-5 w-5" />} label="Credits Earned" value={stats.totalCredits.toLocaleString()} badge="Available" />
+            <StatCard icon={<DollarSign className="h-5 w-5" />} label="Total Earnings" value={`$${(stats.totalCredits * 18.5).toLocaleString()}`} badge="USD Est" />
           </div>
 
           <div className="mb-6">
@@ -113,21 +190,21 @@ export default function FarmerDashboard() {
 
           <div className="rounded-2xl border border-border bg-card shadow-card divide-y divide-border">
             {projects.map((p) => (
-              <div key={p.id} className="flex items-center gap-4 p-5 hover:bg-accent/50 transition-colors">
-                <img src={p.img} alt={p.name} className="h-12 w-12 rounded-full object-cover" loading="lazy" width={48} height={48} />
+              <div key={p.id} className="flex items-center gap-4 p-5 hover:bg-accent/50 transition-colors cursor-pointer" onClick={() => void openProjectDetail(p.id)}>
+                <img src={p.files?.[0]?.url || "https://images.unsplash.com/photo-1476234251651-f353703a034d"} alt={p.name} className="h-12 w-12 rounded-full object-cover" loading="lazy" width={48} height={48} />
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-foreground">{p.name}</p>
-                  <p className="text-xs text-muted-foreground">ID: {p.code}</p>
+                  <p className="text-xs text-muted-foreground">ID: {p.project_code}</p>
                 </div>
                 <div className="text-center hidden sm:block">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Tree Count</p>
-                  <p className="text-lg font-bold text-foreground">{p.trees.toLocaleString()}</p>
+                  <p className="text-lg font-bold text-foreground">{p.trees_count.toLocaleString()}</p>
                 </div>
                 <div className="text-center hidden sm:block">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Credits</p>
-                  <p className="text-lg font-bold text-foreground">{p.credits}</p>
+                  <p className="text-lg font-bold text-foreground">{p.assigned_credits > 0 ? `${p.assigned_credits} VCC` : "Pending"}</p>
                 </div>
-                <StatusBadge status={p.status} />
+                <StatusBadge status={p.status === "verified" ? "verified" : "pending"} />
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </div>
             ))}
@@ -174,7 +251,7 @@ export default function FarmerDashboard() {
                   id="file-upload"
                   type="file"
                   multiple
-                  accept="image/*,video/*"
+                  accept="application/pdf,image/*"
                   className="hidden"
                   onChange={handleFileChange}
                 />
@@ -193,7 +270,7 @@ export default function FarmerDashboard() {
                   <>
                     <Upload className="h-8 w-8 text-primary mb-2" />
                     <p className="font-semibold text-primary text-sm">Drop high-resolution imagery</p>
-                    <p className="text-xs text-muted-foreground">PNG, JPG or Drone Footage (Max 50MB)</p>
+                    <p className="text-xs text-muted-foreground">PDF, PNG, JPG, WEBP (Max 10MB each)</p>
                   </>
                 )}
               </div>
@@ -209,6 +286,77 @@ export default function FarmerDashboard() {
               <Button variant="ghost" onClick={() => setShowModal(false)}>Save as Draft</Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black text-primary">Project Details</DialogTitle>
+          </DialogHeader>
+          {selectedProject && selectedReview && (
+            <div className="space-y-5 mt-4 text-sm">
+              <div className="grid md:grid-cols-2 gap-4 rounded-xl bg-muted/50 p-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Project Code</p>
+                  <p className="font-semibold text-foreground">{selectedProject.project_code}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</p>
+                  <p className="font-semibold text-foreground">{selectedProject.status}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Trees</p>
+                  <p className="font-semibold text-foreground">{selectedProject.trees_count.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Credits</p>
+                  <p className="font-semibold text-foreground">{selectedProject.assigned_credits.toLocaleString()} VCC</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Location</p>
+                  <p className="font-semibold text-foreground">{selectedProject.latitude ?? "-"}, {selectedProject.longitude ?? "-"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reviewed</p>
+                  <p className="font-semibold text-foreground">{selectedProject.reviewed_at ? new Date(selectedProject.reviewed_at).toLocaleString() : "Pending"}</p>
+                </div>
+              </div>
+              {selectedProfile && (
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Developer Profile</p>
+                  <div className="grid md:grid-cols-2 gap-3 text-sm">
+                    <div>Projects: <span className="font-semibold text-foreground">{selectedProfile.total_projects}</span></div>
+                    <div>Trees: <span className="font-semibold text-foreground">{selectedProfile.total_trees}</span></div>
+                    <div>Credits: <span className="font-semibold text-foreground">{selectedProfile.total_credits}</span></div>
+                    <div>Role: <span className="font-semibold text-foreground">{selectedProfile.role}</span></div>
+                  </div>
+                </div>
+              )}
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Files</p>
+                <div className="space-y-2">
+                  {selectedProject.files.length > 0 ? selectedProject.files.map((file, index) => (
+                    <a key={`${file.url}-${index}`} href={file.url} target="_blank" rel="noreferrer" className="block rounded-lg border border-border px-3 py-2 hover:bg-accent/50">
+                      {file.originalName || file.fileType}
+                    </a>
+                  )) : <p className="text-muted-foreground">No files uploaded.</p>}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Review Trail</p>
+                <div className="space-y-2 rounded-xl bg-muted/50 p-4">
+                  {selectedReview.reviews.length > 0 ? selectedReview.reviews.map((review, index) => (
+                    <div key={`${review.createdAt}-${index}`} className="flex items-center justify-between gap-3">
+                      <span className="capitalize">{review.decision}</span>
+                      <span>{review.creditsAssigned || 0} credits</span>
+                      <span className="text-muted-foreground">{review.createdAt ? new Date(review.createdAt).toLocaleString() : "-"}</span>
+                    </div>
+                  )) : <p className="text-muted-foreground">No review history yet.</p>}
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

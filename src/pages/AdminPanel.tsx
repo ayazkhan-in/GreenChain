@@ -1,23 +1,46 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWeb3 } from "@/context/Web3Context";
 import StatusBadge from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CheckCircle, BarChart3, Globe, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
+import { apiRequest } from "@/lib/api";
 
-const submissions = [
-  { id: 1, wallet: "0x71C...4e21", trees: 1240, date: "Oct 24, 2024", status: "pending" as const },
-  { id: 2, wallet: "0x3A2...9F1b", trees: 850, date: "Oct 23, 2024", status: "pending" as const },
-  { id: 3, wallet: "0xBC1...12D9", trees: 3120, date: "Oct 22, 2024", status: "pending" as const },
-  { id: 4, wallet: "0xDD4...A8E1", trees: 15000, date: "Oct 21, 2024", status: "pending" as const },
-];
+type Submission = {
+  id: number;
+  wallet_address: string;
+  trees_count: number;
+  submitted_at: string;
+  status: string;
+};
 
 export default function AdminPanel() {
-  const { verifyProject } = useWeb3();
+  const { verifyProject, account } = useWeb3();
   const [credits, setCredits] = useState<Record<number, string>>({});
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [stats, setStats] = useState({ pending: 0, verifiedToday: 0 });
+
+  const loadData = async () => {
+    if (!account) return;
+    try {
+      const [queueRes, statsRes] = await Promise.all([
+        apiRequest<{ success: boolean; data: Submission[] }>("/admin/submissions", { walletAddress: account }),
+        apiRequest<{ success: boolean; data: { pending: number; verifiedToday: number } }>("/admin/stats", { walletAddress: account }),
+      ]);
+
+      setSubmissions(queueRes.data || []);
+      setStats(statsRes.data || { pending: 0, verifiedToday: 0 });
+    } catch (e: any) {
+      toast.error(e.message || "Failed to load admin queue");
+    }
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, [account]);
 
   const handleApprove = async (id: number) => {
     const c = Number(credits[id] || 0);
@@ -25,10 +48,23 @@ export default function AdminPanel() {
     setLoadingId(id);
     await verifyProject(id, c);
     setLoadingId(null);
+    await loadData();
   };
 
-  const handleReject = (id: number) => {
-    toast.success("Submission rejected");
+  const handleReject = async (id: number) => {
+    if (!account) return;
+    try {
+      await apiRequest(`/admin/submissions/${id}/reject`, {
+        method: "POST",
+        walletAddress: account,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "Rejected by admin" }),
+      });
+      toast.success("Submission rejected");
+      await loadData();
+    } catch (e: any) {
+      toast.error(e.message || "Reject failed");
+    }
   };
 
   return (
@@ -42,11 +78,11 @@ export default function AdminPanel() {
           <div className="flex gap-4">
             <div className="rounded-2xl border border-border bg-card px-6 py-4 text-center shadow-card">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Pending Requests</p>
-              <p className="text-2xl font-black text-foreground">12</p>
+              <p className="text-2xl font-black text-foreground">{stats.pending}</p>
             </div>
             <div className="rounded-2xl border-2 border-primary bg-card px-6 py-4 text-center shadow-card">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">Verified Today</p>
-              <p className="text-2xl font-black text-primary">48</p>
+              <p className="text-2xl font-black text-primary">{stats.verifiedToday}</p>
             </div>
           </div>
         </div>
@@ -68,11 +104,11 @@ export default function AdminPanel() {
                     <div className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-primary">
                       <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                     </div>
-                    <span className="text-sm font-mono text-muted-foreground">{s.wallet}</span>
+                    <span className="text-sm font-mono text-muted-foreground">{`${s.wallet_address.slice(0, 6)}...${s.wallet_address.slice(-4)}`}</span>
                   </td>
-                  <td className="px-6 py-4 text-sm font-bold text-primary">{s.trees.toLocaleString()}</td>
-                  <td className="px-6 py-4 text-sm text-muted-foreground">{s.date}</td>
-                  <td className="px-6 py-4"><StatusBadge status={s.status} /></td>
+                  <td className="px-6 py-4 text-sm font-bold text-primary">{s.trees_count.toLocaleString()}</td>
+                  <td className="px-6 py-4 text-sm text-muted-foreground">{new Date(s.submitted_at).toLocaleDateString()}</td>
+                  <td className="px-6 py-4"><StatusBadge status={s.status === "verified" ? "verified" : "pending"} /></td>
                   <td className="px-6 py-4">
                     <Input type="number" placeholder="0.00" value={credits[s.id] || ""} onChange={(e) => setCredits({ ...credits, [s.id]: e.target.value })} className="w-24 rounded-lg" />
                   </td>
@@ -89,7 +125,7 @@ export default function AdminPanel() {
             </tbody>
           </table>
           <div className="flex items-center justify-between px-6 py-4 border-t border-border">
-            <p className="text-xs font-semibold uppercase tracking-wider text-primary">Showing 4 of 12 submissions</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary">Showing {submissions.length} pending submissions</p>
             <div className="flex gap-1">
               <button className="h-8 w-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:bg-accent"><ChevronLeft className="h-4 w-4" /></button>
               {[1, 2, 3].map((p) => (

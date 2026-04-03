@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
-import { BrowserProvider, Contract, formatEther, parseEther, type JsonRpcSigner } from "ethers";
+import { BrowserProvider, type JsonRpcSigner } from "ethers";
 import { toast } from "sonner";
+import { apiRequest } from "@/lib/api";
 
 export type UserRole = "project_developer" | "company" | "admin" | null;
 
@@ -12,29 +13,14 @@ interface Web3State {
   isConnecting: boolean;
   connectWallet: () => Promise<void>;
   disconnectWallet: () => void;
-  setRole: (role: UserRole) => void;
-  submitProject: (trees: number) => Promise<void>;
+  setRole: (role: UserRole) => Promise<void>;
+  submitProject: (input: { trees: number; location?: string; files?: File[] }) => Promise<void>;
   verifyProject: (id: number, credits: number) => Promise<void>;
   getBalance: () => Promise<string>;
-  burnTokens: (amount: number) => Promise<void>;
+  burnTokens: (amount: number) => Promise<{ quantity: number; certificateNo: string; retiredAt: string } | null>;
 }
 
 const Web3Context = createContext<Web3State | null>(null);
-
-const CARBON_CREDIT_ADDRESS = "0x0000000000000000000000000000000000000001";
-const GREEN_TOKEN_ADDRESS = "0x0000000000000000000000000000000000000002";
-
-const CARBON_CREDIT_ABI = [
-  "function submitProject(uint256 trees) external",
-  "function verifyProject(uint256 id, uint256 credits) external",
-  "function getProject(uint256 id) external view returns (tuple(address farmer, uint256 trees, bool verified, uint256 credits))",
-];
-
-const GREEN_TOKEN_ABI = [
-  "function mint(address to, uint256 amount) external",
-  "function burn(uint256 amount) external",
-  "function balanceOf(address account) external view returns (uint256)",
-];
 
 export function Web3Provider({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<string | null>(null);
@@ -47,11 +33,25 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   });
   const [isConnecting, setIsConnecting] = useState(false);
 
-  const setRole = useCallback((r: UserRole) => {
+  const setRole = useCallback(async (r: UserRole) => {
+    if (!account) {
+      toast.error("Connect wallet first");
+      return;
+    }
+
+    if (r) {
+      await apiRequest("/auth/role", {
+        method: "POST",
+        walletAddress: account,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: r }),
+      });
+    }
+
     setRoleState(r);
     if (r) localStorage.setItem("gc_role", r);
     else localStorage.removeItem("gc_role");
-  }, []);
+  }, [account]);
 
   const connectWallet = useCallback(async () => {
     if (!(window as any).ethereum) {
@@ -63,9 +63,31 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       const p = new BrowserProvider((window as any).ethereum);
       const accounts = await p.send("eth_requestAccounts", []);
       const s = await p.getSigner();
+      const walletAddress = accounts[0];
+
+      const response = await apiRequest<{ success: boolean; data: { role: UserRole } }>("/auth/wallet-connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress }),
+      });
+
+      const profileResponse = await apiRequest<{ success: boolean; data: { role: UserRole } }>("/auth/me", {
+        walletAddress,
+      });
+
       setProvider(p);
       setSigner(s);
-      setAccount(accounts[0]);
+      setAccount(walletAddress);
+
+      const persistedRole = localStorage.getItem("gc_role") as UserRole;
+      const serverRole = profileResponse.data?.role || response.data?.role;
+      if (serverRole) {
+        setRoleState(serverRole);
+        localStorage.setItem("gc_role", serverRole);
+      } else if (persistedRole) {
+        setRoleState(persistedRole);
+      }
+
       toast.success("Wallet connected!");
     } catch (e: any) {
       toast.error(e.message || "Failed to connect wallet");
@@ -75,63 +97,133 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   }, []);
 
   const disconnectWallet = useCallback(() => {
+    if (account) {
+      void apiRequest("/auth/logout", {
+        method: "POST",
+        walletAddress: account,
+      });
+    }
     setAccount(null);
     setSigner(null);
     setProvider(null);
-    setRole(null);
+    setRoleState(null);
     localStorage.removeItem("gc_role");
     toast.success("Wallet disconnected");
-  }, [setRole]);
+  }, [account]);
 
-  const submitProject = useCallback(async (trees: number) => {
-    if (!signer) { toast.error("Connect wallet first"); return; }
+  const submitProject = useCallback(async (input: { trees: number; location?: string; files?: File[] }) => {
+    if (!account) { toast.error("Connect wallet first"); return; }
+
     try {
-      toast.info("Transaction pending...");
-      const contract = new Contract(CARBON_CREDIT_ADDRESS, CARBON_CREDIT_ABI, signer);
-      const tx = await contract.submitProject(trees);
-      await tx.wait();
+      const createResponse = await apiRequest<{ success: boolean; data: { id: number } }>("/projects", {
+        method: "POST",
+        walletAddress: account,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ treesCount: input.trees, location: input.location }),
+      });
+
+      const projectId = createResponse.data?.id;
+
+      for (const file of input.files || []) {
+        const resourceType = file.type === "application/pdf" ? "raw" : "image";
+        const presignResponse = await apiRequest<{
+          success: boolean;
+          data: {
+            timestamp: number;
+            signature: string;
+            publicId: string;
+            apiKey: string;
+            cloudName: string;
+            resourceType: string;
+          };
+        }>(`/projects/${projectId}/media/presign`, {
+          method: "POST",
+          walletAddress: account,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileName: file.name, resourceType }),
+        });
+
+        const uploadUrl = `https://api.cloudinary.com/v1_1/${presignResponse.data.cloudName}/${resourceType}/upload`;
+        const uploadForm = new FormData();
+        uploadForm.append("file", file);
+        uploadForm.append("api_key", presignResponse.data.apiKey);
+        uploadForm.append("timestamp", String(presignResponse.data.timestamp));
+        uploadForm.append("signature", presignResponse.data.signature);
+        uploadForm.append("public_id", presignResponse.data.publicId);
+
+        const uploadResult = await fetch(uploadUrl, {
+          method: "POST",
+          body: uploadForm,
+        });
+
+        if (!uploadResult.ok) {
+          throw new Error(`Cloudinary upload failed for ${file.name}`);
+        }
+
+        const uploaded = await uploadResult.json();
+
+        await apiRequest(`/projects/${projectId}/media/complete`, {
+          method: "POST",
+          walletAddress: account,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileUrl: uploaded.secure_url,
+            publicId: uploaded.public_id,
+            fileType: file.type === "application/pdf" ? "pdf" : "image",
+            originalName: file.name,
+          }),
+        });
+      }
+
       toast.success("Project submitted successfully!");
-    } catch {
-      toast.success("Project submitted! (Demo mode)");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to submit project");
     }
-  }, [signer]);
+  }, [account]);
 
   const verifyProject = useCallback(async (id: number, credits: number) => {
-    if (!signer) { toast.error("Connect wallet first"); return; }
+    if (!account) { toast.error("Connect wallet first"); return; }
     try {
-      toast.info("Transaction pending...");
-      const contract = new Contract(CARBON_CREDIT_ADDRESS, CARBON_CREDIT_ABI, signer);
-      const tx = await contract.verifyProject(id, credits);
-      await tx.wait();
+      await apiRequest(`/admin/submissions/${id}/approve`, {
+        method: "POST",
+        walletAddress: account,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credits }),
+      });
       toast.success("Project verified and tokens minted!");
-    } catch {
-      toast.success("Project verified! (Demo mode)");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to verify project");
     }
-  }, [signer]);
+  }, [account]);
 
   const getBalance = useCallback(async (): Promise<string> => {
-    if (!signer || !account) return "0";
+    if (!account) return "0";
     try {
-      const contract = new Contract(GREEN_TOKEN_ADDRESS, GREEN_TOKEN_ABI, signer);
-      const bal = await contract.balanceOf(account);
-      return formatEther(bal);
+      const response = await apiRequest<{ success: boolean; data: { balance: number } }>("/market/portfolio/summary", {
+        walletAddress: account,
+      });
+      return String(response.data.balance || 0);
     } catch {
-      return "12450";
+      return "0";
     }
-  }, [signer, account]);
+  }, [account]);
 
   const burnTokens = useCallback(async (amount: number) => {
-    if (!signer) { toast.error("Connect wallet first"); return; }
+    if (!account) { toast.error("Connect wallet first"); return; }
     try {
-      toast.info("Transaction pending...");
-      const contract = new Contract(GREEN_TOKEN_ADDRESS, GREEN_TOKEN_ABI, signer);
-      const tx = await contract.burn(parseEther(amount.toString()));
-      await tx.wait();
+      const response = await apiRequest<{ success: boolean; data: { quantity: number; certificateNo: string; retiredAt: string } }>("/market/credits/retire", {
+        method: "POST",
+        walletAddress: account,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quantity: amount }),
+      });
       toast.success("Credits retired successfully!");
-    } catch {
-      toast.success("Credits retired! (Demo mode)");
+      return response.data;
+    } catch (e: any) {
+      toast.error(e.message || "Failed to retire credits");
+      return null;
     }
-  }, [signer]);
+  }, [account]);
 
   useEffect(() => {
     const eth = (window as any).ethereum;

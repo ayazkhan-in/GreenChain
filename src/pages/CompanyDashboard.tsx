@@ -1,44 +1,121 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWeb3 } from "@/context/Web3Context";
 import StatCard from "@/components/StatCard";
-import StatusBadge from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Coins, Leaf, Award, Flame } from "lucide-react";
-import amazonImg from "@/assets/amazon-basin.jpg";
-import windImg from "@/assets/wind-farm.jpg";
-import solarImg from "@/assets/solar-farm.jpg";
-import congoImg from "@/assets/congo-peatlands.jpg";
+import { toast } from "sonner";
+import { apiRequest } from "@/lib/api";
 
-const marketProjects = [
-  { id: 1, name: "Amazon Basin Reserve", location: "Brazil • Reforestation", available: "2,400 VCC", price: "$18.50", img: amazonImg },
-  { id: 2, name: "Northern Wind Farm", location: "Denmark • Wind Energy", available: "1,150 VCC", price: "$14.20", img: windImg },
-  { id: 3, name: "Sahara Solar Initiative", location: "Morocco • Solar Power", available: "5,800 VCC", price: "$12.90", img: solarImg },
-  { id: 4, name: "Congo Peatlands", location: "Congo • Wetland Protect", available: "950 VCC", price: "$24.00", img: congoImg },
-];
+type MarketListing = {
+  id: number;
+  title: string;
+  category: string;
+  location: string;
+  available_quantity: number;
+  price_per_credit: number;
+};
 
-const transactions = [
-  { tx: "0x9a...3e21", project: "Amazon Basin Reserve", type: "Purchase", amount: "+500 VCC", status: "Completed", date: "Oct 24, 2024" },
-  { tx: "0x4f...88b2", project: "Global Offset Pool", type: "Retire", amount: "-1,200 VCC", status: "Completed", date: "Oct 21, 2024" },
-  { tx: "0x1c...ac5a", project: "Northern Wind Farm", type: "Purchase", amount: "+1,000 VCC", status: "Completed", date: "Oct 18, 2024" },
-];
+type Tx = {
+  id: number;
+  tx_hash: string;
+  type: string;
+  quantity: number;
+  status: string;
+  created_at: string;
+};
+
+type Retirement = {
+  id: number;
+  quantity: number;
+  certificate_no: string;
+  created_at: string;
+};
 
 export default function CompanyDashboard() {
-  const { burnTokens, account } = useWeb3();
+  const { burnTokens, account, role } = useWeb3();
   const [showRetire, setShowRetire] = useState(false);
   const [retireAmount, setRetireAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const [showCert, setShowCert] = useState(false);
   const [filter, setFilter] = useState("All Projects");
+  const [marketProjects, setMarketProjects] = useState<MarketListing[]>([]);
+  const [transactions, setTransactions] = useState<Tx[]>([]);
+  const [summary, setSummary] = useState({ totalPurchased: 0, totalRetired: 0, balance: 0 });
+  const [retirements, setRetirements] = useState<Retirement[]>([]);
+  const [certificate, setCertificate] = useState<{ certificate_no: string; quantity: number; wallet_address: string; created_at: string } | null>(null);
+  const [profile, setProfile] = useState<{ totalProjects: number; totalTrees: number; totalCredits: number; totalRetirements: number } | null>(null);
+
+  const loadData = async () => {
+    if (!account) return;
+    try {
+      const [listingsRes, summaryRes, txRes, retirementsRes, profileRes] = await Promise.all([
+        apiRequest<{ success: boolean; data: MarketListing[] }>("/market/listings", { walletAddress: account }),
+        apiRequest<{ success: boolean; data: { totalPurchased: number; totalRetired: number; balance: number } }>("/market/portfolio/summary", { walletAddress: account }),
+        apiRequest<{ success: boolean; data: Tx[] }>("/market/portfolio/transactions", { walletAddress: account }),
+        apiRequest<{ success: boolean; data: Retirement[] }>("/market/credits/retirements", { walletAddress: account }),
+        apiRequest<{ success: boolean; data: { totalProjects: number; totalTrees: number; totalCredits: number; totalRetirements: number } }>("/users/profile", { walletAddress: account }),
+      ]);
+      setMarketProjects(listingsRes.data || []);
+      setSummary(summaryRes.data || { totalPurchased: 0, totalRetired: 0, balance: 0 });
+      setTransactions(txRes.data || []);
+      setRetirements(retirementsRes.data || []);
+      setProfile(profileRes.data || null);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to load company data");
+    }
+  };
+
+  const viewCertificate = async (retirementId: number) => {
+    if (!account) return;
+    try {
+      const certRes = await apiRequest<{ success: boolean; data: { quantity: number; certificate_no: string; wallet_address: string; created_at: string } }>(`/market/credits/retirements/${retirementId}/certificate`, {
+        walletAddress: account,
+      });
+      setCertificate(certRes.data);
+      setShowCert(true);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to load retirement certificate");
+    }
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, [account]);
+
+  const handleBuy = async (listingId: number) => {
+    if (!account) return;
+    try {
+      await apiRequest("/market/purchase", {
+        method: "POST",
+        walletAddress: account,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listingId, quantity: 100 }),
+      });
+      toast.success("Purchased 100 credits successfully");
+      await loadData();
+    } catch (e: any) {
+      toast.error(e.message || "Purchase failed");
+    }
+  };
 
   const handleRetire = async () => {
     if (!retireAmount) return;
     setLoading(true);
-    await burnTokens(Number(retireAmount));
+    const retirementResult = await burnTokens(Number(retireAmount));
     setLoading(false);
     setShowRetire(false);
-    setShowCert(true);
+    await loadData();
+    if (retirementResult) {
+      setCertificate({
+        certificate_no: retirementResult.certificateNo,
+        quantity: retirementResult.quantity,
+        wallet_address: account || "",
+        created_at: retirementResult.retiredAt,
+      });
+      setShowCert(true);
+    }
   };
 
   return (
@@ -49,22 +126,29 @@ export default function CompanyDashboard() {
             <h1 className="text-3xl font-black text-foreground">Portfolio Overview</h1>
             <p className="text-xs font-semibold uppercase tracking-wider text-primary mt-1">Verified Biome Statistics</p>
           </div>
-          <Button onClick={() => setShowRetire(true)} className="rounded-full gap-2">
-            <Flame className="h-4 w-4" /> Retire Credits
-          </Button>
+          {role === "company" && (
+            <Button onClick={() => setShowRetire(true)} className="rounded-full gap-2">
+              <Flame className="h-4 w-4" /> Retire Credits
+            </Button>
+          )}
         </div>
 
         <div className="grid md:grid-cols-3 gap-6 mb-12">
-          <StatCard icon={<Coins className="h-5 w-5" />} label="Total Purchased" value="12,450 VCC" />
-          <StatCard icon={<Leaf className="h-5 w-5" />} label="CO2 Offset" value="8,922 TONS" badge="Equates to 148,700 tree seedlings grown for 10 years." />
-          <div className="rounded-2xl border border-border bg-card p-6 shadow-card flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-primary font-black text-lg">A+</div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Market Impact</p>
-              <p className="font-bold text-foreground">Top 5% Contributor</p>
-              <p className="text-xs text-muted-foreground">Verified across 12 projects</p>
-            </div>
-          </div>
+          {role === "company" && (
+            <>
+              <StatCard icon={<Coins className="h-5 w-5" />} label="Total Purchased" value={`${summary.totalPurchased.toLocaleString()} VCC`} />
+              <StatCard icon={<Leaf className="h-5 w-5" />} label="CO2 Offset" value={`${(summary.totalPurchased * 0.72).toLocaleString(undefined, { maximumFractionDigits: 2 })} TONS`} badge="Estimated conversion" />
+              <div className="rounded-2xl border border-border bg-card p-6 shadow-card flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-primary font-black text-lg">A+</div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Market Impact</p>
+                  <p className="font-bold text-foreground">Balance {summary.balance.toLocaleString()} VCC</p>
+                  <p className="text-xs text-muted-foreground">Retired {summary.totalRetired.toLocaleString()} VCC</p>
+                  <p className="text-xs text-muted-foreground">Projects {profile?.totalProjects ?? 0} | Trees {profile?.totalTrees ?? 0}</p>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Marketplace */}
@@ -83,53 +167,92 @@ export default function CompanyDashboard() {
           {marketProjects.map((p) => (
             <div key={p.id} className="rounded-2xl border border-border bg-card shadow-card overflow-hidden hover:shadow-elevated transition-shadow">
               <div className="relative h-40 overflow-hidden">
-                <img src={p.img} alt={p.name} className="w-full h-full object-cover" loading="lazy" />
+                <img src="https://images.unsplash.com/photo-1448375240586-882707db888b" alt={p.title} className="w-full h-full object-cover" loading="lazy" />
                 <Badge className="absolute top-3 left-3 bg-primary text-primary-foreground text-[10px] uppercase tracking-wider">Verified</Badge>
               </div>
               <div className="p-4">
-                <h3 className="font-bold text-foreground">{p.name}</h3>
+                <h3 className="font-bold text-foreground">{p.title}</h3>
                 <p className="text-xs text-muted-foreground">{p.location}</p>
                 <div className="mt-3 flex items-center justify-between">
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Available</p>
-                    <p className="font-bold text-foreground">{p.available}</p>
+                    <p className="font-bold text-foreground">{Number(p.available_quantity).toLocaleString()} VCC</p>
                   </div>
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Price</p>
-                    <p className="font-bold text-foreground">{p.price}</p>
+                    <p className="font-bold text-foreground">${Number(p.price_per_credit).toFixed(2)}</p>
                   </div>
                 </div>
-                <Button className="w-full mt-4 rounded-full">Buy Credits</Button>
+                {role === "company" ? (
+                  <Button className="w-full mt-4 rounded-full" onClick={() => void handleBuy(p.id)}>Buy 100 Credits</Button>
+                ) : (
+                  <Button className="w-full mt-4 rounded-full" variant="outline" disabled>
+                    View Only
+                  </Button>
+                )}
               </div>
             </div>
           ))}
         </div>
 
         {/* Recent Activity */}
-        <h2 className="text-2xl font-black text-foreground mb-6">Recent Activity</h2>
-        <div className="rounded-2xl border border-border bg-card shadow-card overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border">
-                {["Transaction", "Project", "Type", "Amount", "Status", "Date"].map((h) => (
-                  <th key={h} className="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {transactions.map((t) => (
-                <tr key={t.tx} className="hover:bg-accent/50 transition-colors">
-                  <td className="px-6 py-4 text-sm font-mono text-muted-foreground">{t.tx}</td>
-                  <td className="px-6 py-4 text-sm font-semibold text-foreground">{t.project}</td>
-                  <td className="px-6 py-4 text-sm text-muted-foreground">{t.type}</td>
-                  <td className={`px-6 py-4 text-sm font-semibold ${t.amount.startsWith("+") ? "text-primary" : "text-destructive"}`}>{t.amount}</td>
-                  <td className="px-6 py-4"><Badge variant="secondary" className="text-xs">Completed</Badge></td>
-                  <td className="px-6 py-4 text-sm text-muted-foreground">{t.date}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {role === "company" && (
+          <>
+            <h2 className="text-2xl font-black text-foreground mb-6">Recent Activity</h2>
+            <div className="rounded-2xl border border-border bg-card shadow-card overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    {["Transaction", "Project", "Type", "Amount", "Status", "Date"].map((h) => (
+                      <th key={h} className="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {transactions.map((t) => (
+                    <tr key={t.id} className="hover:bg-accent/50 transition-colors">
+                      <td className="px-6 py-4 text-sm font-mono text-muted-foreground">{t.tx_hash || "-"}</td>
+                      <td className="px-6 py-4 text-sm font-semibold text-foreground">{t.type === "purchase" ? "Marketplace" : "Offset Pool"}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{t.type}</td>
+                      <td className={`px-6 py-4 text-sm font-semibold ${t.type === "purchase" ? "text-primary" : "text-destructive"}`}>{t.type === "purchase" ? "+" : "-"}{t.quantity} VCC</td>
+                      <td className="px-6 py-4"><Badge variant="secondary" className="text-xs">{t.status}</Badge></td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{new Date(t.created_at).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {role === "company" && (
+          <div className="mt-12">
+            <h2 className="text-2xl font-black text-foreground mb-6">Retirement History</h2>
+            <div className="rounded-2xl border border-border bg-card shadow-card overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    {["Certificate", "Quantity", "Date", "Action"].map((h) => (
+                      <th key={h} className="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {retirements.map((retirement) => (
+                    <tr key={retirement.id} className="hover:bg-accent/50 transition-colors">
+                      <td className="px-6 py-4 text-sm font-mono text-muted-foreground">{retirement.certificate_no}</td>
+                      <td className="px-6 py-4 text-sm font-semibold text-foreground">{retirement.quantity} VCC</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{new Date(retirement.created_at).toLocaleString()}</td>
+                      <td className="px-6 py-4">
+                        <Button variant="outline" size="sm" onClick={() => void viewCertificate(retirement.id)}>View Certificate</Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Retire Modal */}
@@ -161,21 +284,42 @@ export default function CompanyDashboard() {
             <div className="mt-6 space-y-3 text-sm text-left rounded-xl bg-muted/50 p-5">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Wallet</span>
-                <span className="font-mono font-semibold text-foreground">{account ? `${account.slice(0, 6)}...${account.slice(-4)}` : "0x71C...39A2"}</span>
+                <span className="font-mono font-semibold text-foreground">{certificate?.wallet_address ? `${certificate.wallet_address.slice(0, 6)}...${certificate.wallet_address.slice(-4)}` : account ? `${account.slice(0, 6)}...${account.slice(-4)}` : "0x71C...39A2"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Credits Retired</span>
-                <span className="font-bold text-foreground">{retireAmount || "500"} VCC</span>
+                <span className="font-bold text-foreground">{certificate?.quantity || retireAmount || "500"} VCC</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Certificate No</span>
+                <span className="font-mono font-semibold text-foreground">{certificate?.certificate_no || "-"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Timestamp</span>
-                <span className="text-foreground">{new Date().toLocaleString()}</span>
+                <span className="text-foreground">{certificate?.created_at ? new Date(certificate.created_at).toLocaleString() : new Date().toLocaleString()}</span>
               </div>
             </div>
             <Button className="mt-6 rounded-full px-8" onClick={() => setShowCert(false)}>Close</Button>
           </div>
         </DialogContent>
       </Dialog>
+
+      {role === "company" && retirements.length > 0 && (
+        <div className="container pb-10">
+          <h3 className="text-xl font-black text-foreground mb-4">Recent Retirement Certificates</h3>
+          <div className="grid md:grid-cols-2 gap-4">
+            {retirements.slice(0, 4).map((retirement) => (
+              <div key={retirement.id} className="rounded-2xl border border-border bg-card p-4 shadow-card flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{retirement.certificate_no}</p>
+                  <p className="font-bold text-foreground">{retirement.quantity} VCC</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => void viewCertificate(retirement.id)}>View</Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
