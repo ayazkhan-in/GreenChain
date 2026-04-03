@@ -22,6 +22,7 @@ export default function FarmerDashboard() {
   const [showModal, setShowModal] = useState(false);
   const [treeCount, setTreeCount] = useState("");
   const [location, setLocation] = useState("");
+  const [locationLoading, setLocationLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
 
