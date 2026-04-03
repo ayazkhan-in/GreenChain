@@ -112,7 +112,7 @@ export default function Landing() {
             </p>
             <div className="mt-8 flex items-center justify-center gap-4">
               <Button variant="secondary" size="lg" className="rounded-full px-8" asChild>
-                <Link to={account ? "/role-select" : "#"} onClick={!account ? connectWallet : undefined}>Launch Application</Link>
+                <Link to="/connect">Launch Application</Link>
               </Button>
               <Button variant="outline" size="lg" className="rounded-full px-8 border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">
                 View Ecosystem
