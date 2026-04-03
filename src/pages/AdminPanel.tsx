@@ -56,7 +56,7 @@ export default function AdminPanel() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                {["Farmer Address", "Trees Planted", "Date Submitted", "Status", "Assign Credits", "Actions"].map((h) => (
+                {["Developer Address", "Trees Planted", "Date Submitted", "Status", "Assign Credits", "Actions"].map((h) => (
                   <th key={h} className="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
                 ))}
               </tr>

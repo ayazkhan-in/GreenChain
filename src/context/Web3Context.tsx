@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, type React
 import { BrowserProvider, Contract, formatEther, parseEther, type JsonRpcSigner } from "ethers";
 import { toast } from "sonner";
 
-export type UserRole = "farmer" | "company" | "admin" | null;
+export type UserRole = "project_developer" | "company" | "admin" | null;
 
 interface Web3State {
   account: string | null;
@@ -41,7 +41,9 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   const [signer, setSigner] = useState<JsonRpcSigner | null>(null);
   const [provider, setProvider] = useState<BrowserProvider | null>(null);
   const [role, setRoleState] = useState<UserRole>(() => {
-    return (localStorage.getItem("gc_role") as UserRole) || null;
+    const stored = localStorage.getItem("gc_role") as UserRole;
+    if (stored === "farmer" as any) return "project_developer";
+    return stored || null;
   });
   const [isConnecting, setIsConnecting] = useState(false);
 
