@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { useWeb3 } from "@/context/Web3Context";
 import StatCard from "@/components/StatCard";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { toast } from "sonner";
 import { apiRequest } from "@/lib/api";
 import { Contract, parseUnits } from "ethers";
 import { GREEN_TOKEN_ABI, GREEN_TOKEN_ADDRESS, etherscanTxUrl } from "@/lib/contracts";
+import { containerVariants, itemVariants, staggerContainer, staggerItem } from "@/lib/animations";
 
 type MarketListing = {
   id: number;
@@ -166,19 +168,20 @@ export default function CompanyDashboard() {
   return (
     <div className="min-h-screen bg-background">
       <div className="container py-10">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-black text-foreground">Portfolio Overview</h1>
-            <p className="text-xs font-semibold uppercase tracking-wider text-primary mt-1">Verified Biome Statistics</p>
-          </div>
-          {role === "company" && (
-            <Button onClick={() => setShowRetire(true)} className="rounded-full gap-2">
-              <Flame className="h-4 w-4" /> Retire Credits
-            </Button>
-          )}
-        </div>
+        <motion.div initial="hidden" animate="visible" variants={containerVariants}>
+          <motion.div variants={itemVariants} className="flex items-center justify-between mb-8">
+            <div>
+              <h1 className="text-3xl font-black text-foreground">Portfolio Overview</h1>
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary mt-1">Verified Biome Statistics</p>
+            </div>
+            {role === "company" && (
+              <Button onClick={() => setShowRetire(true)} className="rounded-full gap-2">
+                <Flame className="h-4 w-4" /> Retire Credits
+              </Button>
+            )}
+          </motion.div>
 
-        <div className="grid md:grid-cols-3 gap-6 mb-12">
+          <motion.div variants={itemVariants} className="grid md:grid-cols-3 gap-6 mb-12">
           {role === "company" && (
             <>
               <StatCard icon={<Coins className="h-5 w-5" />} label="Total Purchased" value={`${summary.totalPurchased.toLocaleString()} VCC`} />
@@ -194,10 +197,10 @@ export default function CompanyDashboard() {
               </div>
             </>
           )}
-        </div>
+        </motion.div>
 
         {/* Marketplace */}
-        <div className="flex items-center justify-between mb-6">
+        <motion.div variants={itemVariants} className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-black text-foreground">Credit Marketplace</h2>
           <div className="flex gap-2">
             {["All Projects", "Reforestation", "Renewable Energy"].map((f) => (
@@ -206,11 +209,11 @@ export default function CompanyDashboard() {
               </button>
             ))}
           </div>
-        </div>
+        </motion.div>
 
-        <div className="grid md:grid-cols-4 gap-6 mb-12">
+        <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid md:grid-cols-4 gap-6 mb-12">
           {marketProjects.map((p) => (
-            <div key={p.id} className="rounded-2xl border border-border bg-card shadow-card overflow-hidden hover:shadow-elevated transition-shadow">
+            <motion.div key={p.id} variants={staggerItem} className="rounded-2xl border border-border bg-card shadow-card overflow-hidden hover:shadow-elevated transition-shadow">
               <div className="relative h-40 overflow-hidden">
                 <img src="https://images.unsplash.com/photo-1448375240586-882707db888b" alt={p.title} className="w-full h-full object-cover" loading="lazy" />
                 <Badge className="absolute top-3 left-3 bg-primary text-primary-foreground text-[10px] uppercase tracking-wider">Verified</Badge>
@@ -236,9 +239,9 @@ export default function CompanyDashboard() {
                   </Button>
                 )}
               </div>
-            </div>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
 
         {/* Recent Activity */}
         {role === "company" && (
@@ -304,6 +307,7 @@ export default function CompanyDashboard() {
             </div>
           </div>
         )}
+        </motion.div>
       </div>
 
       {/* Retire Modal */}

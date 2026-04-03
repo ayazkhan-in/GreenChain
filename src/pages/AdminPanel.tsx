@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { useWeb3 } from "@/context/Web3Context";
 import StatusBadge from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { CheckCircle, BarChart3, Globe, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api";
+import { containerVariants, itemVariants, staggerContainer, staggerItem } from "@/lib/animations";
 
 type Submission = {
   id: number;
@@ -70,25 +72,26 @@ export default function AdminPanel() {
   return (
     <div className="min-h-screen bg-background">
       <div className="container py-10">
-        <div className="flex items-start justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-black text-foreground">Project Verification Queue</h1>
-            <p className="mt-2 text-muted-foreground max-w-lg">Review and validate ecosystem restorations. High-fidelity verification ensures the integrity of the Digital Biome.</p>
-          </div>
-          <div className="flex gap-4">
-            <div className="rounded-2xl border border-border bg-card px-6 py-4 text-center shadow-card">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Pending Requests</p>
-              <p className="text-2xl font-black text-foreground">{stats.pending}</p>
+        <motion.div initial="hidden" animate="visible" variants={containerVariants}>
+          <motion.div variants={itemVariants} className="flex items-start justify-between mb-8">
+            <div>
+              <h1 className="text-3xl font-black text-foreground">Project Verification Queue</h1>
+              <p className="mt-2 text-muted-foreground max-w-lg">Review and validate ecosystem restorations. High-fidelity verification ensures the integrity of the Digital Biome.</p>
             </div>
-            <div className="rounded-2xl border-2 border-primary bg-card px-6 py-4 text-center shadow-card">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">Verified Today</p>
-              <p className="text-2xl font-black text-primary">{stats.verifiedToday}</p>
+            <div className="flex gap-4">
+              <motion.div variants={staggerItem} className="rounded-2xl border border-border bg-card px-6 py-4 text-center shadow-card">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Pending Requests</p>
+                <p className="text-2xl font-black text-foreground">{stats.pending}</p>
+              </motion.div>
+              <motion.div variants={staggerItem} className="rounded-2xl border-2 border-primary bg-card px-6 py-4 text-center shadow-card">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">Verified Today</p>
+                <p className="text-2xl font-black text-primary">{stats.verifiedToday}</p>
+              </motion.div>
             </div>
-          </div>
-        </div>
+          </motion.div>
 
-        {/* Table */}
-        <div className="rounded-2xl border border-border bg-card shadow-card overflow-hidden mb-6">
+          {/* Table */}
+          <motion.div variants={itemVariants} className="rounded-2xl border border-border bg-card shadow-card overflow-hidden mb-6">
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
@@ -134,25 +137,26 @@ export default function AdminPanel() {
               <button className="h-8 w-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:bg-accent"><ChevronRight className="h-4 w-4" /></button>
             </div>
           </div>
-        </div>
+        </motion.div>
 
         {/* Info Cards */}
-        <div className="grid md:grid-cols-3 gap-6">
+        <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid md:grid-cols-3 gap-6">
           {[
             { icon: <CheckCircle className="h-5 w-5" />, tag: "Efficiency", title: "Automated Checks", desc: "Satellite data has pre-screened 85% of these entries for canopy density compliance.", color: "border-t-4 border-t-primary" },
             { icon: <BarChart3 className="h-5 w-5" />, tag: "Live Data", title: "Registry Load", desc: "The minting engine is currently operating at 12% capacity. Optimal time for credit distribution." },
             { icon: <Globe className="h-5 w-5" />, tag: "Audit Log", title: "Immutable Trace", desc: "Every approval is hashed and pinned to the global biome ledger for permanent transparency." },
           ].map((c) => (
-            <div key={c.title} className={`rounded-2xl border border-border bg-card p-6 shadow-card ${c.color || ""}`}>
+            <motion.div key={c.title} variants={staggerItem} className={`rounded-2xl border border-border bg-card p-6 shadow-card ${c.color || ""}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="text-primary">{c.icon}</div>
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">{c.tag}</span>
               </div>
               <h3 className="font-bold text-foreground">{c.title}</h3>
               <p className="mt-1 text-sm text-muted-foreground">{c.desc}</p>
-            </div>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
+        </motion.div>
       </div>
     </div>
   );

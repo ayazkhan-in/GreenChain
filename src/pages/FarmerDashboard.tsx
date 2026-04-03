@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { useWeb3 } from "@/context/Web3Context";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
@@ -11,6 +12,7 @@ import { toast } from "sonner";
 import { apiRequest } from "@/lib/api";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from "recharts";
+import { containerVariants, itemVariants, staggerContainer, staggerItem } from "@/lib/animations";
 
 type FarmerProject = {
   id: number;
@@ -219,28 +221,29 @@ export default function FarmerDashboard() {
         </aside>
 
         <main className="flex-1 p-6 md:p-10">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-primary" />
-              <span className="text-xs font-semibold uppercase tracking-wider text-primary">Active Session</span>
-            </div>
-            <Button onClick={() => { setShowModal(true); fetchLocation(); }} className="rounded-full">Submit Project</Button>
-          </div>
-
-          {activeTab === "Overview" && (
-            <>
-              <div className="grid md:grid-cols-3 gap-6 mb-10">
-                <StatCard icon={<TreePine className="h-5 w-5" />} label="Total Trees Planted" value={stats.totalTrees.toLocaleString()} badge="Live" />
-                <StatCard icon={<Coins className="h-5 w-5" />} label="Credits Earned" value={stats.totalCredits.toLocaleString()} badge="Available" />
-                <StatCard icon={<DollarSign className="h-5 w-5" />} label="Total Earnings" value={`$${(stats.totalCredits * 18.5).toLocaleString()}`} badge="USD Est" />
+          <motion.div initial="hidden" animate="visible" variants={containerVariants}>
+            <motion.div variants={itemVariants} className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-primary" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-primary">Active Session</span>
               </div>
+              <Button onClick={() => { setShowModal(true); fetchLocation(); }} className="rounded-full">Submit Project</Button>
+            </motion.div>
+
+            {activeTab === "Overview" && (
+              <>
+                <motion.div variants={itemVariants} className="grid md:grid-cols-3 gap-6 mb-10">
+                  <StatCard icon={<TreePine className="h-5 w-5" />} label="Total Trees Planted" value={stats.totalTrees.toLocaleString()} badge="Live" />
+                  <StatCard icon={<Coins className="h-5 w-5" />} label="Credits Earned" value={stats.totalCredits.toLocaleString()} badge="Available" />
+                  <StatCard icon={<DollarSign className="h-5 w-5" />} label="Total Earnings" value={`$${(stats.totalCredits * 18.5).toLocaleString()}`} badge="USD Est" />
+                </motion.div>
 
               <div className="mb-6">
                 <h2 className="text-2xl font-black text-foreground">My Projects</h2>
                 <p className="mt-1 text-sm text-muted-foreground">Manage your active biomes and monitor real-time verification status across the GreenChain network.</p>
               </div>
 
-              <div className="rounded-2xl border border-border bg-card shadow-card divide-y divide-border">
+              <motion.div variants={itemVariants} className="rounded-2xl border border-border bg-card shadow-card divide-y divide-border">
                 {projects.map((p) => (
                   <div key={p.id} className="flex items-center gap-4 p-5 hover:bg-accent/50 transition-colors cursor-pointer" onClick={() => void openProjectDetail(p.id)}>
                     <img src={p.files?.[0]?.url || "https://images.unsplash.com/photo-1476234251651-f353703a034d"} alt={p.name} className="h-12 w-12 rounded-full object-cover" loading="lazy" width={48} height={48} />
@@ -260,20 +263,20 @@ export default function FarmerDashboard() {
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   </div>
                 ))}
-              </div>
+              </motion.div>
             </>
           )}
 
           {activeTab === "Projects" && (
             <>
-              <div className="mb-6">
+              <motion.div variants={itemVariants} className="mb-6">
                 <h2 className="text-2xl font-black text-foreground">Project Management</h2>
                 <p className="mt-1 text-sm text-muted-foreground">Deep view of your submissions, progress, and project health.</p>
-              </div>
+              </motion.div>
 
-              <div className="grid md:grid-cols-2 gap-6">
+              <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid md:grid-cols-2 gap-6">
                 {projects.map((p) => (
-                  <div key={p.id} className="rounded-2xl border border-border bg-card p-6 shadow-card hover:shadow-elevated transition-shadow">
+                  <motion.div key={p.id} variants={staggerItem} className="rounded-2xl border border-border bg-card p-6 shadow-card hover:shadow-elevated transition-shadow">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex items-center gap-3">
                         <img src={p.files?.[0]?.url || "https://images.unsplash.com/photo-1476234251651-f353703a034d"} alt={p.name} className="h-12 w-12 rounded-full object-cover" />
@@ -299,9 +302,9 @@ export default function FarmerDashboard() {
                     <Button className="mt-5 w-full rounded-full" variant="outline" onClick={() => void openProjectDetail(p.id)}>
                       View Details
                     </Button>
-                  </div>
+                  </motion.div>
                 ))}
-              </div>
+              </motion.div>
             </>
           )}
 
@@ -399,6 +402,7 @@ export default function FarmerDashboard() {
               </div>
             </>
           )}
+          </motion.div>
         </main>
       </div>
 
