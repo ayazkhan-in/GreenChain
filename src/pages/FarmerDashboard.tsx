@@ -23,6 +23,20 @@ export default function FarmerDashboard() {
   const [treeCount, setTreeCount] = useState("");
   const [location, setLocation] = useState("");
   const [loading, setLoading] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setFiles(Array.from(e.target.files));
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.files) {
+      setFiles(Array.from(e.dataTransfer.files));
+    }
+  };
 
   const handleSubmit = async () => {
     if (!treeCount) return;
@@ -32,6 +46,7 @@ export default function FarmerDashboard() {
     setShowModal(false);
     setTreeCount("");
     setLocation("");
+    setFiles([]);
   };
 
   return (
@@ -51,7 +66,6 @@ export default function FarmerDashboard() {
             ))}
           </nav>
           <div className="space-y-2 mt-auto">
-            <Button className="w-full rounded-full">Mint Credits</Button>
             <button className="w-full text-left px-4 py-2 text-sm text-muted-foreground hover:text-foreground">Settings</button>
             <button className="w-full text-left px-4 py-2 text-sm text-muted-foreground hover:text-foreground">Support</button>
           </div>
@@ -126,10 +140,38 @@ export default function FarmerDashboard() {
             </div>
             <div>
               <Label className="text-xs font-semibold uppercase tracking-wider text-primary">Site Documentation</Label>
-              <div className="mt-1.5 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/30 p-8 text-center">
-                <Upload className="h-8 w-8 text-primary mb-2" />
-                <p className="font-semibold text-primary text-sm">Drop high-resolution imagery</p>
-                <p className="text-xs text-muted-foreground">PNG, JPG or Drone Footage (Max 50MB)</p>
+              <div
+                className="mt-1.5 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/30 p-8 text-center cursor-pointer hover:border-primary/50 transition-colors relative"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleDrop}
+                onClick={() => document.getElementById("file-upload")?.click()}
+              >
+                <input
+                  id="file-upload"
+                  type="file"
+                  multiple
+                  accept="image/*,video/*"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+                {files.length > 0 ? (
+                  <div className="space-y-2 w-full">
+                    {files.map((f, i) => (
+                      <div key={i} className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm">
+                        <Upload className="h-4 w-4 text-primary shrink-0" />
+                        <span className="text-foreground truncate">{f.name}</span>
+                        <span className="text-muted-foreground text-xs ml-auto shrink-0">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
+                      </div>
+                    ))}
+                    <p className="text-xs text-muted-foreground mt-1">Click or drop to add more</p>
+                  </div>
+                ) : (
+                  <>
+                    <Upload className="h-8 w-8 text-primary mb-2" />
+                    <p className="font-semibold text-primary text-sm">Drop high-resolution imagery</p>
+                    <p className="text-xs text-muted-foreground">PNG, JPG or Drone Footage (Max 50MB)</p>
+                  </>
+                )}
               </div>
             </div>
             <div className="rounded-xl bg-muted/50 p-4 flex items-start gap-3">
