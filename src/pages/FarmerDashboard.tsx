@@ -17,7 +17,7 @@ type FarmerProject = {
   trees_count: number;
   assigned_credits: number;
   status: string;
-  files: { url: string; fileType: string }[];
+  files: { url: string; fileType: string; originalName?: string }[];
 };
 
 type ProjectDetail = FarmerProject & {
@@ -148,7 +148,6 @@ export default function FarmerDashboard() {
   return (
     <div className="min-h-screen bg-background">
       <div className="flex">
-        {/* Sidebar */}
         <aside className="hidden lg:flex w-64 flex-col border-r border-border p-6 min-h-[calc(100vh-4rem)]">
           <div className="mb-8">
             <h2 className="text-lg font-bold text-foreground">GreenChain</h2>
@@ -167,7 +166,6 @@ export default function FarmerDashboard() {
           </div>
         </aside>
 
-        {/* Main */}
         <main className="flex-1 p-6 md:p-10">
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-2">
