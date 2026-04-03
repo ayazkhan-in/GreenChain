@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { TreePine, Coins, DollarSign, ChevronRight, Upload, MapPin, Trees, Info } from "lucide-react";
+import { TreePine, Coins, DollarSign, ChevronRight, Upload, MapPin, Trees, Info, ShieldCheck, LineChart as LineChartIcon } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from "recharts";
 
 type FarmerProject = {
   id: number;
@@ -17,13 +19,13 @@ type FarmerProject = {
   trees_count: number;
   assigned_credits: number;
   status: string;
+  submitted_at?: string;
   files: { url: string; fileType: string; originalName?: string }[];
 };
 
 type ProjectDetail = FarmerProject & {
   latitude: number | null;
   longitude: number | null;
-  submitted_at: string;
   reviewed_at: string | null;
   rejection_reason: string | null;
 };
@@ -55,8 +57,10 @@ export default function FarmerDashboard() {
   const [locationLoading, setLocationLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [activeTab, setActiveTab] = useState<"Overview" | "Projects" | "Verification" | "Analytics">("Overview");
   const [projects, setProjects] = useState<FarmerProject[]>([]);
   const [stats, setStats] = useState({ totalTrees: 0, totalCredits: 0 });
+  const [profileStats, setProfileStats] = useState({ totalProjects: 0, totalTrees: 0, totalCredits: 0, totalRetirements: 0 });
   const [selectedProject, setSelectedProject] = useState<ProjectDetail | null>(null);
   const [selectedReview, setSelectedReview] = useState<ReviewStatus | null>(null);
   const [selectedProfile, setSelectedProfile] = useState<PublicProfile | null>(null);
@@ -64,12 +68,20 @@ export default function FarmerDashboard() {
 
   const loadData = async () => {
     if (!account) return;
+
     try {
-      const response = await apiRequest<{ success: boolean; data: { projects: FarmerProject[]; stats: { totalTrees: number; totalCredits: number } } }>("/projects/my", {
-        walletAddress: account,
-      });
-      setProjects(response.data.projects || []);
-      setStats(response.data.stats || { totalTrees: 0, totalCredits: 0 });
+      const [projectResponse, profileResponse] = await Promise.all([
+        apiRequest<{ success: boolean; data: { projects: FarmerProject[]; stats: { totalTrees: number; totalCredits: number } } }>("/projects/my", {
+          walletAddress: account,
+        }),
+        apiRequest<{ success: boolean; data: { totalProjects: number; totalTrees: number; totalCredits: number; totalRetirements: number } }>("/users/profile", {
+          walletAddress: account,
+        }),
+      ]);
+
+      setProjects(projectResponse.data.projects || []);
+      setStats(projectResponse.data.stats || { totalTrees: 0, totalCredits: 0 });
+      setProfileStats(profileResponse.data || { totalProjects: 0, totalTrees: 0, totalCredits: 0, totalRetirements: 0 });
     } catch (e: any) {
       toast.error(e.message || "Failed to load projects");
     }
@@ -97,6 +109,7 @@ export default function FarmerDashboard() {
       setLocation("Geolocation not supported");
       return;
     }
+
     setLocationLoading(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -112,6 +125,7 @@ export default function FarmerDashboard() {
 
   const handleSubmit = async () => {
     if (!treeCount) return;
+
     setLoading(true);
     await submitProject({
       trees: Number(treeCount),
@@ -128,14 +142,17 @@ export default function FarmerDashboard() {
 
   const openProjectDetail = async (projectId: number) => {
     if (!account) return;
+
     try {
       const [projectRes, reviewRes] = await Promise.all([
         apiRequest<{ success: boolean; data: ProjectDetail }>(`/projects/${projectId}`, { walletAddress: account }),
         apiRequest<{ success: boolean; data: ReviewStatus }>(`/projects/${projectId}/review-status`, { walletAddress: account }),
       ]);
+
       const publicProfileRes = await apiRequest<{ success: boolean; data: PublicProfile }>(`/users/${reviewRes.data.developer_wallet}/public`, {
         walletAddress: account,
       });
+
       setSelectedProject(projectRes.data);
       setSelectedReview(reviewRes.data);
       setSelectedProfile(publicProfileRes.data);
@@ -144,6 +161,37 @@ export default function FarmerDashboard() {
       toast.error(e.message || "Failed to load project details");
     }
   };
+
+  const pendingProjects = projects.filter((p) => p.status !== "verified");
+
+  const monthlySeries = projects
+    .map((p) => {
+      const date = p.submitted_at ? new Date(p.submitted_at) : null;
+      const month = date ? date.toLocaleString("en-US", { month: "short" }) : "Unknown";
+      return {
+        month,
+        trees: p.trees_count,
+        credits: Number(p.assigned_credits || 0),
+      };
+    })
+    .reduce<{ month: string; trees: number; credits: number }[]>((acc, item) => {
+      const existing = acc.find((row) => row.month === item.month);
+      if (existing) {
+        existing.trees += item.trees;
+        existing.credits += item.credits;
+      } else {
+        acc.push(item);
+      }
+      return acc;
+    }, []);
+
+  const chartData = monthlySeries.length
+    ? monthlySeries
+    : [
+        { month: "Jan", trees: 0, credits: 0 },
+        { month: "Feb", trees: 0, credits: 0 },
+        { month: "Mar", trees: 0, credits: 0 },
+      ];
 
   return (
     <div className="min-h-screen bg-background">
@@ -154,8 +202,12 @@ export default function FarmerDashboard() {
             <p className="text-xs text-primary font-semibold uppercase tracking-wider">Verified Biome</p>
           </div>
           <nav className="space-y-1 flex-1">
-            {["Overview", "Projects", "Verification", "Analytics"].map((item, i) => (
-              <button key={item} className={`flex items-center gap-3 w-full rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${i === 0 ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}>
+            {(["Overview", "Projects", "Verification", "Analytics"] as const).map((item) => (
+              <button
+                key={item}
+                onClick={() => setActiveTab(item)}
+                className={`flex items-center gap-3 w-full rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${activeTab === item ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+              >
                 {item}
               </button>
             ))}
@@ -175,42 +227,181 @@ export default function FarmerDashboard() {
             <Button onClick={() => { setShowModal(true); fetchLocation(); }} className="rounded-full">Submit Project</Button>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6 mb-10">
-            <StatCard icon={<TreePine className="h-5 w-5" />} label="Total Trees Planted" value={stats.totalTrees.toLocaleString()} badge="Live" />
-            <StatCard icon={<Coins className="h-5 w-5" />} label="Credits Earned" value={stats.totalCredits.toLocaleString()} badge="Available" />
-            <StatCard icon={<DollarSign className="h-5 w-5" />} label="Total Earnings" value={`$${(stats.totalCredits * 18.5).toLocaleString()}`} badge="USD Est" />
-          </div>
-
-          <div className="mb-6">
-            <h2 className="text-2xl font-black text-foreground">My Projects</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Manage your active biomes and monitor real-time verification status across the GreenChain network.</p>
-          </div>
-
-          <div className="rounded-2xl border border-border bg-card shadow-card divide-y divide-border">
-            {projects.map((p) => (
-              <div key={p.id} className="flex items-center gap-4 p-5 hover:bg-accent/50 transition-colors cursor-pointer" onClick={() => void openProjectDetail(p.id)}>
-                <img src={p.files?.[0]?.url || "https://images.unsplash.com/photo-1476234251651-f353703a034d"} alt={p.name} className="h-12 w-12 rounded-full object-cover" loading="lazy" width={48} height={48} />
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-foreground">{p.name}</p>
-                  <p className="text-xs text-muted-foreground">ID: {p.project_code}</p>
-                </div>
-                <div className="text-center hidden sm:block">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Tree Count</p>
-                  <p className="text-lg font-bold text-foreground">{p.trees_count.toLocaleString()}</p>
-                </div>
-                <div className="text-center hidden sm:block">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Credits</p>
-                  <p className="text-lg font-bold text-foreground">{p.assigned_credits > 0 ? `${p.assigned_credits} VCC` : "Pending"}</p>
-                </div>
-                <StatusBadge status={p.status === "verified" ? "verified" : "pending"} />
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          {activeTab === "Overview" && (
+            <>
+              <div className="grid md:grid-cols-3 gap-6 mb-10">
+                <StatCard icon={<TreePine className="h-5 w-5" />} label="Total Trees Planted" value={stats.totalTrees.toLocaleString()} badge="Live" />
+                <StatCard icon={<Coins className="h-5 w-5" />} label="Credits Earned" value={stats.totalCredits.toLocaleString()} badge="Available" />
+                <StatCard icon={<DollarSign className="h-5 w-5" />} label="Total Earnings" value={`$${(stats.totalCredits * 18.5).toLocaleString()}`} badge="USD Est" />
               </div>
-            ))}
-          </div>
+
+              <div className="mb-6">
+                <h2 className="text-2xl font-black text-foreground">My Projects</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Manage your active biomes and monitor real-time verification status across the GreenChain network.</p>
+              </div>
+
+              <div className="rounded-2xl border border-border bg-card shadow-card divide-y divide-border">
+                {projects.map((p) => (
+                  <div key={p.id} className="flex items-center gap-4 p-5 hover:bg-accent/50 transition-colors cursor-pointer" onClick={() => void openProjectDetail(p.id)}>
+                    <img src={p.files?.[0]?.url || "https://images.unsplash.com/photo-1476234251651-f353703a034d"} alt={p.name} className="h-12 w-12 rounded-full object-cover" loading="lazy" width={48} height={48} />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-foreground">{p.name}</p>
+                      <p className="text-xs text-muted-foreground">ID: {p.project_code}</p>
+                    </div>
+                    <div className="text-center hidden sm:block">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Tree Count</p>
+                      <p className="text-lg font-bold text-foreground">{p.trees_count.toLocaleString()}</p>
+                    </div>
+                    <div className="text-center hidden sm:block">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Credits</p>
+                      <p className="text-lg font-bold text-foreground">{p.assigned_credits > 0 ? `${p.assigned_credits} VCC` : "Pending"}</p>
+                    </div>
+                    <StatusBadge status={p.status === "verified" ? "verified" : "pending"} />
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {activeTab === "Projects" && (
+            <>
+              <div className="mb-6">
+                <h2 className="text-2xl font-black text-foreground">Project Management</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Deep view of your submissions, progress, and project health.</p>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6">
+                {projects.map((p) => (
+                  <div key={p.id} className="rounded-2xl border border-border bg-card p-6 shadow-card hover:shadow-elevated transition-shadow">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <img src={p.files?.[0]?.url || "https://images.unsplash.com/photo-1476234251651-f353703a034d"} alt={p.name} className="h-12 w-12 rounded-full object-cover" />
+                        <div>
+                          <p className="font-bold text-foreground">{p.name}</p>
+                          <p className="text-xs text-muted-foreground">{p.project_code}</p>
+                        </div>
+                      </div>
+                      <StatusBadge status={p.status === "verified" ? "verified" : "pending"} />
+                    </div>
+
+                    <div className="mt-4 space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Trees</span>
+                        <span className="font-semibold text-foreground">{p.trees_count.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Credits</span>
+                        <span className="font-semibold text-foreground">{Number(p.assigned_credits || 0).toLocaleString()} VCC</span>
+                      </div>
+                    </div>
+
+                    <Button className="mt-5 w-full rounded-full" variant="outline" onClick={() => void openProjectDetail(p.id)}>
+                      View Details
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {activeTab === "Verification" && (
+            <>
+              <div className="mb-6">
+                <h2 className="text-2xl font-black text-foreground">Verification Center</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Track pending submissions under review and verification status.</p>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6 mb-6">
+                <StatCard icon={<ShieldCheck className="h-5 w-5" />} label="Pending Verification" value={pendingProjects.length.toString()} badge="Live Queue" />
+                <StatCard icon={<Coins className="h-5 w-5" />} label="Verified Projects" value={(projects.length - pendingProjects.length).toString()} badge="Approved" />
+              </div>
+
+              <div className="space-y-4">
+                {pendingProjects.length > 0 ? (
+                  pendingProjects.map((p) => (
+                    <div key={p.id} className="rounded-2xl border border-border bg-card p-6 shadow-card">
+                      <div className="flex items-center justify-between gap-4 mb-4">
+                        <div>
+                          <p className="font-bold text-foreground">{p.name}</p>
+                          <p className="text-xs text-muted-foreground">{p.project_code}</p>
+                        </div>
+                        <StatusBadge status="pending" />
+                      </div>
+
+                      <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
+                        <div className="h-full w-1/2 bg-primary" />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">Review in progress. Satellite and admin checks pending.</p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-border bg-card p-8 text-center">
+                    <ShieldCheck className="h-10 w-10 text-primary mx-auto mb-3" />
+                    <p className="font-semibold text-foreground">No pending verifications</p>
+                    <p className="text-sm text-muted-foreground">All submitted projects are processed.</p>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {activeTab === "Analytics" && (
+            <>
+              <div className="mb-6">
+                <h2 className="text-2xl font-black text-foreground">Impact Analytics</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Visualize growth in tree counts and verified credit outcomes.</p>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6 mb-6">
+                <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
+                  <div className="flex items-center gap-2 mb-4">
+                    <LineChartIcon className="h-5 w-5 text-primary" />
+                    <h3 className="font-bold text-foreground">Credit Yield</h3>
+                  </div>
+                  <ChartContainer config={{ credits: { label: "Credits", color: "hsl(var(--primary))" } }} className="h-[260px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                        <XAxis dataKey="month" tickLine={false} axisLine={false} />
+                        <YAxis tickLine={false} axisLine={false} />
+                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <Bar dataKey="credits" fill="var(--color-credits)" radius={[6, 6, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </ChartContainer>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Trees className="h-5 w-5 text-primary" />
+                    <h3 className="font-bold text-foreground">Tree Growth</h3>
+                  </div>
+                  <ChartContainer config={{ trees: { label: "Trees", color: "hsl(var(--primary))" } }} className="h-[260px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                        <XAxis dataKey="month" tickLine={false} axisLine={false} />
+                        <YAxis tickLine={false} axisLine={false} />
+                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <Area type="monotone" dataKey="trees" stroke="var(--color-trees)" fill="var(--color-trees)" fillOpacity={0.2} strokeWidth={3} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </ChartContainer>
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-4 gap-4">
+                <StatCard label="Total Projects" value={profileStats.totalProjects.toString()} />
+                <StatCard label="Total Trees" value={profileStats.totalTrees.toLocaleString()} />
+                <StatCard label="Total Credits" value={profileStats.totalCredits.toLocaleString()} />
+                <StatCard label="Total Retirements" value={profileStats.totalRetirements.toString()} />
+              </div>
+            </>
+          )}
         </main>
       </div>
 
-      {/* Submit Modal */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
@@ -233,7 +424,7 @@ export default function FarmerDashboard() {
                   <Input readOnly placeholder={locationLoading ? "Fetching GPS..." : "GPS Coordinates"} value={location} className="pl-10 rounded-xl border-border bg-muted/50 cursor-default" />
                 </div>
                 <Button type="button" variant="outline" size="sm" onClick={fetchLocation} disabled={locationLoading} className="rounded-xl shrink-0">
-                  {locationLoading ? "Fetching…" : "Refresh"}
+                  {locationLoading ? "Fetching..." : "Refresh"}
                 </Button>
               </div>
             </div>
