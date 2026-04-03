@@ -46,6 +46,7 @@ export default function FarmerDashboard() {
     setShowModal(false);
     setTreeCount("");
     setLocation("");
+    setFiles([]);
   };
 
   return (
