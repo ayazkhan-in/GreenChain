@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { useWeb3 } from "@/context/Web3Context";
 import { Button } from "@/components/ui/button";
 import { TextEffect } from "@/components/ui/text-effect";
-import { ArrowRight, Leaf, Shield, Coins } from "lucide-react";
+import { ArrowRight, Leaf, Shield, Coins, Zap } from "lucide-react";
 import heroForest from "@/assets/hero-forest.jpg";
 import { containerVariants, itemVariants, slideInLeft, cardVariants, staggerContainer, staggerItem } from "@/lib/animations";
 
@@ -82,6 +82,14 @@ export default function Landing() {
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
               <Button variant="outline" size="lg" className="rounded-full px-8 py-6 border-2 border-gray-800 text-gray-800 hover:bg-gray-50 font-bold shadow-md transition-all duration-200 text-base" asChild>
                 <Link to="/connect">Connect Wallet</Link>
+              </Button>
+            </motion.div>
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <Button variant="outline" size="lg" className="rounded-full px-8 py-6 border-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50 font-bold shadow-md transition-all duration-200 text-base" asChild>
+                <Link to="/connect" className="flex items-center gap-2">
+                  <Zap className="h-5 w-5 text-emerald-600" />
+                  Instant Demo Access
+                </Link>
               </Button>
             </motion.div>
           </motion.div>

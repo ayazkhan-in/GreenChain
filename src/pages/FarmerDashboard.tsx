@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { TreePine, Coins, DollarSign, ChevronRight, Upload, MapPin, Trees, Info, ShieldCheck, LineChart as LineChartIcon } from "lucide-react";
+import { TreePine, Coins, DollarSign, ChevronRight, Upload, MapPin, Trees, Info, ShieldCheck, LineChart as LineChartIcon, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest, API_BASE_URL } from "@/lib/api";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
@@ -141,6 +141,13 @@ export default function FarmerDashboard() {
     );
   };
 
+  const handleFillSampleProject = () => {
+    setProjectName("Pacific Northwest Cedar Restoration");
+    setTreeCount("450");
+    setTreeType("spruce");
+    setLocation("47.606200, -122.332100");
+  };
+
   const handleSubmit = async () => {
     if (!projectName || !treeCount || !treeType) {
       toast.error("Please fill in all fields");
@@ -149,43 +156,18 @@ export default function FarmerDashboard() {
 
     setLoading(true);
     try {
-      const formData = new FormData();
-      formData.append("name", projectName);
-      formData.append("trees", treeCount);
-      formData.append("treeType", treeType);
-      formData.append("location", location);
-      
-      // Append files
-      for (const file of files) {
-        formData.append("files", file);
-      }
-
-      const response = await fetch(`${API_BASE_URL}/projects`, {
+      await apiRequest("/projects", {
         method: "POST",
-        headers: {
-          "X-Wallet-Address": account || "",
-        },
-        body: formData,
+        walletAddress: account,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: projectName,
+          treesCount: Number(treeCount),
+          treeType,
+          location: location || "47.606200, -122.332100",
+        }),
       });
 
-      if (!response.ok) {
-        let errorMessage = "Failed to submit project";
-        try {
-          const contentType = response.headers.get("content-type");
-          if (contentType && contentType.includes("application/json")) {
-            const error = await response.json();
-            errorMessage = error.message || errorMessage;
-          } else {
-            const text = await response.text();
-            errorMessage = text || `Error ${response.status}: ${response.statusText}`;
-          }
-        } catch (parseError) {
-          errorMessage = `Error ${response.status}: ${response.statusText}`;
-        }
-        throw new Error(errorMessage);
-      }
-
-      const result = await response.json();
       toast.success("Project submitted successfully!");
       setShowModal(false);
       setProjectName("");
@@ -303,7 +285,7 @@ export default function FarmerDashboard() {
                 <motion.div variants={itemVariants} className="grid md:grid-cols-3 gap-6 mb-10">
                   <StatCard icon={<TreePine className="h-5 w-5" />} label="Total Trees Planted" value={stats.totalTrees.toLocaleString()} badge="Live" />
                   <StatCard icon={<Coins className="h-5 w-5" />} label="Credits Earned" value={stats.totalCredits.toLocaleString()} badge="Available" />
-                  <StatCard icon={<DollarSign className="h-5 w-5" />} label="Total Earnings" value={`$${(stats.totalCredits * 18.5).toLocaleString()}`} badge="USD Est" />
+                  <StatCard icon={<DollarSign className="h-5 w-5" />} label="Total Earnings" value={`₹${(stats.totalCredits * 83).toLocaleString()}`} badge="INR Est" />
                 </motion.div>
 
               <div className="mb-6">
@@ -476,9 +458,21 @@ export default function FarmerDashboard() {
 
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-black text-primary">Submit Project</DialogTitle>
-            <p className="text-xs font-semibold uppercase tracking-wider text-primary">Verification Portal V1.0</p>
+          <DialogHeader className="flex flex-row items-center justify-between">
+            <div>
+              <DialogTitle className="text-2xl font-black text-primary">Submit Project</DialogTitle>
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary">Verification Portal V1.0</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleFillSampleProject}
+              className="rounded-full text-xs font-semibold text-primary border-primary/30 hover:bg-primary/10 gap-1.5 mr-6"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Fill Sample Data
+            </Button>
           </DialogHeader>
           <div className="space-y-3 mt-4">
             <div>

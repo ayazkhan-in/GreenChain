@@ -29,7 +29,7 @@ type MarketListing = {
 };
 
 export default function CompanyMarketplace() {
-  const { account, role } = useWeb3();
+  const { account, role, connectDemoWallet } = useWeb3();
   const [marketProjects, setMarketProjects] = useState<MarketListing[]>([]);
   const [loading, setLoading] = useState(false);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
@@ -165,10 +165,14 @@ export default function CompanyMarketplace() {
                 >
                   <div className="relative h-40 overflow-hidden bg-muted">
                     <img
-                      src={p.project_image || "https://images.unsplash.com/photo-1448375240586-882707db888b"}
+                      src={p.project_image || "https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80"}
                       alt={p.project_name || p.title}
                       className="w-full h-full object-cover"
                       loading="lazy"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src =
+                          "https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80";
+                      }}
                     />
                     <Badge className="absolute top-3 left-3 bg-primary text-primary-foreground text-[10px] uppercase tracking-wider">
                       Verified
@@ -276,10 +280,54 @@ export default function CompanyMarketplace() {
                     placeholder="e.g. 100"
                     className="mt-1.5 rounded-xl"
                   />
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <span className="text-xs text-muted-foreground mr-1">Presets:</span>
+                    {[25, 50, 100].map((val) => (
+                      <Button
+                        key={val}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPurchaseAmount(String(Math.min(val, Number(selectedListing.available_quantity))))}
+                        className="h-7 text-xs rounded-lg border-primary/30 text-primary hover:bg-primary/10 px-2.5"
+                      >
+                        {val} VCC
+                      </Button>
+                    ))}
+                    {Number(selectedListing.available_quantity) > 0 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPurchaseAmount(String(selectedListing.available_quantity))}
+                        className="h-7 text-xs rounded-lg border-primary/30 text-primary hover:bg-primary/10 px-2.5"
+                      >
+                        Max
+                      </Button>
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-2">
                     Total: ₹{((Number(purchaseAmount || 0) * Number(selectedListing.price_per_credit)) * 83).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </p>
                 </div>
+
+                {role !== "company" && (
+                  <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground flex items-center justify-between">
+                    <span>Active role is {role || "guest"}. Switch to Company to purchase:</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        await connectDemoWallet("company");
+                        toast.success("Switched to Company role");
+                      }}
+                      className="h-7 text-xs rounded-lg border-primary text-primary"
+                    >
+                      Switch to Company
+                    </Button>
+                  </div>
+                )}
 
                 <Button
                   onClick={submitPurchase}

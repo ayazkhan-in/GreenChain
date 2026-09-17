@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Coins, Leaf, Award, Flame, TrendingUp, Download, Share2, BarChart3, TrendingDown, Trees } from "lucide-react";
+import { Coins, Leaf, Award, Flame, TrendingUp, Download, Share2, BarChart3, TrendingDown, Trees, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api";
 import { containerVariants, itemVariants, staggerContainer, staggerItem } from "@/lib/animations";
@@ -115,11 +115,11 @@ export default function CompanyDashboard() {
 
       // Call backend API to process the purchase
       // The backend handles credit allocation and balance updates
-      await apiRequest<{ success: boolean; data: { id: number; txHash?: string } }>("/market/purchase", {
+      const response = await apiRequest<{ success: boolean; data: { id: number; txHash?: string } }>("/market/purchase", {
         method: "POST",
         walletAddress: account,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ listingId: listing.id, quantity }),
+        body: JSON.stringify({ listingId: listing.id, quantity, txHash: "0x" + Math.random().toString(16).slice(2) }),
       });
 
       toast.success(`Purchased ${quantity} credits successfully! Your balance has been updated.`);
@@ -559,10 +559,14 @@ export default function CompanyDashboard() {
                     <motion.div key={p.id} variants={staggerItem} className="rounded-2xl border border-border bg-card shadow-card overflow-hidden hover:shadow-elevated transition-shadow">
                       <div className="relative h-40 overflow-hidden bg-muted">
                         <img 
-                          src={p.project_image || "https://images.unsplash.com/photo-1448375240586-882707db888b"} 
+                          src={p.project_image || "https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80"} 
                           alt={p.project_name || p.title} 
                           className="w-full h-full object-cover" 
                           loading="lazy" 
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).src =
+                              "https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80";
+                          }}
                         />
                         <Badge className="absolute top-3 left-3 bg-primary text-primary-foreground text-[10px] uppercase tracking-wider">Verified</Badge>
                       </div>
@@ -629,6 +633,32 @@ export default function CompanyDashboard() {
                 max={summary.balance}
                 className="mt-1.5 rounded-xl"
               />
+              <div className="flex items-center gap-1.5 mt-2">
+                <span className="text-xs text-muted-foreground mr-1">Presets:</span>
+                {[25, 50, 100].map((val) => (
+                  <Button
+                    key={val}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRetireAmount(String(Math.min(val, summary.balance)))}
+                    className="h-7 text-xs rounded-lg border-primary/30 text-primary hover:bg-primary/10 px-2.5"
+                  >
+                    {val} VCC
+                  </Button>
+                ))}
+                {summary.balance > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRetireAmount(String(summary.balance))}
+                    className="h-7 text-xs rounded-lg border-primary/30 text-primary hover:bg-primary/10 px-2.5"
+                  >
+                    Max
+                  </Button>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground mt-2">
                 Available: {summary.balance.toLocaleString()} VCC (₹{(summary.balance * 83).toLocaleString()})
               </p>
@@ -733,6 +763,21 @@ export default function CompanyDashboard() {
                     placeholder="e.g. 100"
                     className="mt-1.5 rounded-xl"
                   />
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <span className="text-xs text-muted-foreground mr-1">Presets:</span>
+                    {[25, 50, 100].map((val) => (
+                      <Button
+                        key={val}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPurchaseAmount(String(Math.min(val, Number(selectedListing.available_quantity))))}
+                        className="h-7 text-xs rounded-lg border-primary/30 text-primary hover:bg-primary/10 px-2.5"
+                      >
+                        {val} VCC
+                      </Button>
+                    ))}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-2">
                     Total: ₹{(Number(purchaseAmount || 0) * Number(selectedListing.price_per_credit || 0) * 83).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </p>

@@ -5,9 +5,10 @@ import StatusBadge from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, BarChart3, Globe, ChevronLeft, ChevronRight, Trees, Leaf } from "lucide-react";
+import { CheckCircle, BarChart3, Globe, ChevronLeft, ChevronRight, Trees, Leaf, Sparkles, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api";
+import { MockStore } from "@/lib/mockStore";
 import { containerVariants, itemVariants, staggerContainer, staggerItem } from "@/lib/animations";
 
 // Tree types with CO2 multipliers (kg CO2 per tree per year)
@@ -98,6 +99,22 @@ export default function AdminPanel() {
     }
   };
 
+  const handleSeedSubmissions = async () => {
+    MockStore.seedAdminSubmissions();
+    toast.success("Added sample submissions to verification queue");
+    await loadData();
+  };
+
+  const handleApproveAll = async () => {
+    if (submissions.length === 0) return;
+    for (const sub of submissions) {
+      const credits = calculateExpectedCredits(sub);
+      await verifyProject(sub.id, credits || 500);
+    }
+    toast.success("Approved all pending submissions");
+    await loadData();
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container py-10">
@@ -107,15 +124,40 @@ export default function AdminPanel() {
               <h1 className="text-3xl font-black text-foreground">Project Verification Queue</h1>
               <p className="mt-2 text-muted-foreground max-w-lg">Review and validate ecosystem restorations. High-fidelity verification ensures the integrity of the Digital Biome.</p>
             </div>
-            <div className="flex gap-4">
-              <motion.div variants={staggerItem} className="rounded-2xl border border-border bg-card px-6 py-4 text-center shadow-card">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Pending Requests</p>
-                <p className="text-2xl font-black text-foreground">{stats.pending}</p>
-              </motion.div>
-              <motion.div variants={staggerItem} className="rounded-2xl border-2 border-primary bg-card px-6 py-4 text-center shadow-card">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">Verified Today</p>
-                <p className="text-2xl font-black text-primary">{stats.verifiedToday}</p>
-              </motion.div>
+            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-4">
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSeedSubmissions}
+                  className="rounded-full text-xs font-semibold text-primary border-primary/30 hover:bg-primary/10 gap-1.5"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Seed Sample Submissions
+                </Button>
+                {submissions.length > 0 && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleApproveAll}
+                    className="rounded-full text-xs font-semibold gap-1.5"
+                  >
+                    <CheckCheck className="h-3.5 w-3.5" />
+                    Verify All Pending
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <motion.div variants={staggerItem} className="rounded-2xl border border-border bg-card px-5 py-3 text-center shadow-card">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Pending</p>
+                  <p className="text-xl font-black text-foreground">{stats.pending}</p>
+                </motion.div>
+                <motion.div variants={staggerItem} className="rounded-2xl border-2 border-primary bg-card px-5 py-3 text-center shadow-card">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">Verified Today</p>
+                  <p className="text-xl font-black text-primary">{stats.verifiedToday}</p>
+                </motion.div>
+              </div>
             </div>
           </motion.div>
 
@@ -130,7 +172,25 @@ export default function AdminPanel() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {submissions.map((s) => (
+              {submissions.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
+                    <p className="text-sm font-semibold text-foreground mb-2">No pending submissions in verification queue</p>
+                    <p className="text-xs text-muted-foreground mb-4">Click below to add sample projects ready for verification:</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSeedSubmissions}
+                      className="rounded-full text-xs font-semibold text-primary border-primary/30 hover:bg-primary/10 gap-1.5"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Seed Sample Submissions
+                    </Button>
+                  </td>
+                </tr>
+              ) : (
+                submissions.map((s) => (
                 <tr key={s.id} className="hover:bg-accent/50 transition-colors">
                   <td className="px-6 py-4 text-sm font-semibold text-foreground">{s.project_name || "Unnamed Project"}</td>
                   <td className="px-6 py-4 flex items-center gap-2">
@@ -160,7 +220,7 @@ export default function AdminPanel() {
                     </div>
                   </td>
                 </tr>
-              ))}
+              )))}
             </tbody>
           </table>
           <div className="flex items-center justify-between px-6 py-4 border-t border-border">

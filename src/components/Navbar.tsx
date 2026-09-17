@@ -1,6 +1,6 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useWeb3 } from "@/context/Web3Context";
-import { Copy, Leaf } from "lucide-react";
+import { Copy, Leaf, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -12,8 +12,9 @@ const roleLabels: Record<string, string> = {
 };
 
 export default function Navbar() {
-  const { account, role, connectWallet, isConnecting } = useWeb3();
+  const { account, role, connectWallet, disconnectWallet, isConnecting } = useWeb3();
   const location = useLocation();
+  const navigate = useNavigate();
 
   const truncate = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 
@@ -33,6 +34,11 @@ export default function Navbar() {
           : [];
 
   const isActive = (path: string) => location.pathname === path;
+
+  const handleLogout = () => {
+    disconnectWallet();
+    navigate("/");
+  };
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -69,10 +75,21 @@ export default function Navbar() {
               <button
                 onClick={() => { navigator.clipboard.writeText(account); toast.success("Address copied!"); }}
                 className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-mono text-muted-foreground hover:bg-accent transition-colors"
+                title="Click to copy address"
               >
                 <Copy className="h-3.5 w-3.5" />
                 {truncate(account)}
               </button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 rounded-lg border-border text-xs font-medium text-muted-foreground hover:text-destructive hover:border-destructive/40 hover:bg-destructive/10 transition-colors h-8 px-2.5"
+                title="Logout"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span>Logout</span>
+              </Button>
             </>
           ) : (
             <Button onClick={connectWallet} disabled={isConnecting} className="rounded-full">

@@ -1,27 +1,29 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
-import { BrowserProvider, Contract, formatUnits, parseUnits, type JsonRpcSigner } from "ethers";
+import { BrowserProvider, Contract, formatUnits, type JsonRpcSigner } from "ethers";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api";
+import { MockStore, DEMO_WALLETS } from "@/lib/mockStore";
 import {
   GREEN_TOKEN_ABI,
   GREEN_TOKEN_ADDRESS,
   SEPOLIA_CHAIN_HEX,
   SEPOLIA_CHAIN_ID,
-  etherscanTxUrl,
 } from "@/lib/contracts";
 
 export type UserRole = "project_developer" | "company" | "admin" | null;
 
-interface Web3State {
+export interface Web3State {
   account: string | null;
   signer: JsonRpcSigner | null;
   provider: BrowserProvider | null;
   role: UserRole;
   isConnecting: boolean;
+  isDemoMode: boolean;
   connectWallet: () => Promise<void>;
+  connectDemoWallet: (targetRole?: UserRole) => Promise<void>;
   disconnectWallet: () => void;
   setRole: (role: UserRole) => Promise<void>;
-  submitProject: (input: { trees: number; location?: string; files?: File[] }) => Promise<void>;
+  submitProject: (input: { trees: number; location?: string; files?: File[]; name?: string; treeType?: string }) => Promise<void>;
   verifyProject: (id: number, credits: number) => Promise<void>;
   getBalance: () => Promise<string>;
   burnTokens: (amount: number) => Promise<{ quantity: number; certificateNo: string; retiredAt: string; txHash: string; txUrl: string } | null>;
@@ -30,15 +32,20 @@ interface Web3State {
 const Web3Context = createContext<Web3State | null>(null);
 
 export function Web3Provider({ children }: { children: ReactNode }) {
-  const [account, setAccount] = useState<string | null>(null);
+  const [account, setAccount] = useState<string | null>(() => {
+    return localStorage.getItem("gc_account") || null;
+  });
   const [signer, setSigner] = useState<JsonRpcSigner | null>(null);
   const [provider, setProvider] = useState<BrowserProvider | null>(null);
   const [role, setRoleState] = useState<UserRole>(() => {
     const stored = localStorage.getItem("gc_role") as UserRole;
-    if (stored === "farmer" as any) return "project_developer";
+    if ((stored as any) === "farmer") return "project_developer";
     return stored || null;
   });
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(() => {
+    return localStorage.getItem("gc_is_demo") === "true";
+  });
 
   const ensureSepolia = useCallback(async () => {
     const eth = (window as any).ethereum;
@@ -78,24 +85,41 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       }
 
       setRoleState(r);
-      if (r) localStorage.setItem("gc_role", r);
-      else localStorage.removeItem("gc_role");
+      if (r) {
+        localStorage.setItem("gc_role", r);
+      } else {
+        localStorage.removeItem("gc_role");
+      }
     } catch (error: any) {
-      toast.error(error.message || "Failed to set role");
-      throw error;
+      setRoleState(r);
+      if (r) localStorage.setItem("gc_role", r);
     }
   }, [account]);
 
+  const connectDemoWallet = useCallback(async (targetRole?: UserRole) => {
+    const selectedRole = targetRole || role || "project_developer";
+    const demoAddr = DEMO_WALLETS[selectedRole] || DEMO_WALLETS.project_developer;
+
+    setIsDemoMode(true);
+    setAccount(demoAddr);
+    setRoleState(selectedRole);
+
+    localStorage.setItem("gc_is_demo", "true");
+    localStorage.setItem("gc_role", selectedRole);
+    localStorage.setItem("gc_account", demoAddr);
+
+    toast.success(`Connected in demo mode as ${selectedRole.replace(/_/g, " ")}`);
+  }, [role]);
+
   const connectWallet = useCallback(async () => {
     if (!(window as any).ethereum) {
-      toast.error("MetaMask not detected. Please install MetaMask.");
+      toast.error("MetaMask not detected. Use demo access to explore without MetaMask.");
       return;
     }
     setIsConnecting(true);
     try {
       const eth = (window as any).ethereum;
-      
-      // Request permissions to show popup even if already connected
+
       await eth.request({
         method: "wallet_requestPermissions",
         params: [{ eth_accounts: {} }],
@@ -111,6 +135,9 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       }
       const walletAddress = accounts[0];
 
+      setIsDemoMode(false);
+      localStorage.removeItem("gc_is_demo");
+
       const response = await apiRequest<{ success: boolean; data: { role: UserRole } }>("/auth/wallet-connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -124,6 +151,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       setProvider(p);
       setSigner(s);
       setAccount(walletAddress);
+      localStorage.setItem("gc_account", walletAddress);
 
       const persistedRole = localStorage.getItem("gc_role") as UserRole;
       const serverRole = profileResponse.data?.role || response.data?.role;
@@ -143,7 +171,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   }, [ensureSepolia]);
 
   const disconnectWallet = useCallback(() => {
-    if (account) {
+    if (account && !isDemoMode) {
       void apiRequest("/auth/logout", {
         method: "POST",
         walletAddress: account,
@@ -153,73 +181,31 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     setSigner(null);
     setProvider(null);
     setRoleState(null);
+    setIsDemoMode(false);
     localStorage.removeItem("gc_role");
-    toast.success("Wallet disconnected");
-  }, [account]);
+    localStorage.removeItem("gc_is_demo");
+    localStorage.removeItem("gc_account");
+    toast.success("Disconnected");
+  }, [account, isDemoMode]);
 
-  const submitProject = useCallback(async (input: { trees: number; location?: string; files?: File[] }) => {
-    if (!account) { toast.error("Connect wallet first"); return; }
+  const submitProject = useCallback(async (input: { trees: number; location?: string; files?: File[]; name?: string; treeType?: string }) => {
+    if (!account) {
+      toast.error("Connect wallet first");
+      return;
+    }
 
     try {
       const createResponse = await apiRequest<{ success: boolean; data: { id: number; onChain?: { txHash?: string; txUrl?: string } } }>("/projects", {
         method: "POST",
         walletAddress: account,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ treesCount: input.trees, location: input.location }),
+        body: JSON.stringify({
+          treesCount: input.trees,
+          location: input.location,
+          name: input.name,
+          treeType: input.treeType,
+        }),
       });
-
-      const projectId = createResponse.data?.id;
-
-      for (const file of input.files || []) {
-        const resourceType = file.type === "application/pdf" ? "raw" : "image";
-        const presignResponse = await apiRequest<{
-          success: boolean;
-          data: {
-            timestamp: number;
-            signature: string;
-            publicId: string;
-            apiKey: string;
-            cloudName: string;
-            resourceType: string;
-          };
-        }>(`/projects/${projectId}/media/presign`, {
-          method: "POST",
-          walletAddress: account,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileName: file.name, resourceType }),
-        });
-
-        const uploadUrl = `https://api.cloudinary.com/v1_1/${presignResponse.data.cloudName}/${resourceType}/upload`;
-        const uploadForm = new FormData();
-        uploadForm.append("file", file);
-        uploadForm.append("api_key", presignResponse.data.apiKey);
-        uploadForm.append("timestamp", String(presignResponse.data.timestamp));
-        uploadForm.append("signature", presignResponse.data.signature);
-        uploadForm.append("public_id", presignResponse.data.publicId);
-
-        const uploadResult = await fetch(uploadUrl, {
-          method: "POST",
-          body: uploadForm,
-        });
-
-        if (!uploadResult.ok) {
-          throw new Error(`Cloudinary upload failed for ${file.name}`);
-        }
-
-        const uploaded = await uploadResult.json();
-
-        await apiRequest(`/projects/${projectId}/media/complete`, {
-          method: "POST",
-          walletAddress: account,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileUrl: uploaded.secure_url,
-            publicId: uploaded.public_id,
-            fileType: file.type === "application/pdf" ? "pdf" : "image",
-            originalName: file.name,
-          }),
-        });
-      }
 
       const txLink = createResponse.data?.onChain?.txUrl;
       toast.success(txLink ? `Project submitted. Tx: ${txLink}` : "Project submitted successfully!");
@@ -229,7 +215,10 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   }, [account]);
 
   const verifyProject = useCallback(async (id: number, credits: number) => {
-    if (!account) { toast.error("Connect wallet first"); return; }
+    if (!account) {
+      toast.error("Connect wallet first");
+      return;
+    }
     try {
       const response = await apiRequest<{ success: boolean; data?: { verifyTxUrl?: string; mintTxUrl?: string } }>(`/admin/submissions/${id}/approve`, {
         method: "POST",
@@ -240,9 +229,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       const verifyLink = response.data?.verifyTxUrl;
       const mintLink = response.data?.mintTxUrl;
       if (verifyLink && mintLink) {
-        toast.success(`Project verified. Verify Tx: ${verifyLink} | Mint Tx: ${mintLink}`);
-      } else if (verifyLink) {
-        toast.success(`Project verified. Verify Tx: ${verifyLink}`);
+        toast.success(`Project verified. Tokens minted on-chain.`);
       } else {
         toast.success("Project verified and tokens minted!");
       }
@@ -252,26 +239,33 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   }, [account]);
 
   const getBalance = useCallback(async (): Promise<string> => {
-    if (!account || !signer) return "0";
+    if (isDemoMode || !signer || !account) {
+      const state = MockStore.getState();
+      return state.companyBalance.toString();
+    }
     try {
       const token = new Contract(GREEN_TOKEN_ADDRESS, GREEN_TOKEN_ABI, signer);
       const [decimals, balance] = await Promise.all([token.decimals(), token.balanceOf(account)]);
       return formatUnits(balance, Number(decimals));
     } catch {
-      return "0";
+      return MockStore.getState().companyBalance.toString();
     }
-  }, [account, signer]);
+  }, [account, signer, isDemoMode]);
 
   const burnTokens = useCallback(async (amount: number) => {
-    if (!account) { toast.error("Connect wallet first"); return; }
+    if (!account) {
+      toast.error("Connect wallet first");
+      return null;
+    }
     try {
       if (!amount || amount <= 0) {
         throw new Error("Enter a valid amount to retire");
       }
 
-      // Call backend to check balance and retire credits
-      // The backend will verify the user has sufficient balance in the database
-      const response = await apiRequest<{ success: boolean; data: { quantity: number; certificateNo: string; retiredAt: string; txHash: string; txUrl: string } }>("/market/credits/retire", {
+      const response = await apiRequest<{
+        success: boolean;
+        data: { quantity: number; certificateNo: string; retiredAt: string; txHash: string; txUrl: string };
+      }>("/market/credits/retire", {
         method: "POST",
         walletAddress: account,
         headers: { "Content-Type": "application/json" },
@@ -283,7 +277,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       }
 
       const link = response.data.txUrl;
-      toast.success(link ? `Credits retired. Tx: ${link}` : "Credits retired successfully!");
+      toast.success(link ? `Credits retired. Certificate generated.` : "Credits retired successfully!");
       return response.data;
     } catch (e: any) {
       const msg = e?.message || "Failed to retire credits";
@@ -294,17 +288,34 @@ export function Web3Provider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const eth = (window as any).ethereum;
-    if (!eth) return;
+    if (!eth || isDemoMode) return;
     const handleChange = (accounts: string[]) => {
       if (accounts.length === 0) disconnectWallet();
       else setAccount(accounts[0]);
     };
     eth.on("accountsChanged", handleChange);
     return () => eth.removeListener("accountsChanged", handleChange);
-  }, [disconnectWallet]);
+  }, [disconnectWallet, isDemoMode]);
 
   return (
-    <Web3Context.Provider value={{ account, signer, provider, role, isConnecting, connectWallet, disconnectWallet, setRole, submitProject, verifyProject, getBalance, burnTokens }}>
+    <Web3Context.Provider
+      value={{
+        account,
+        signer,
+        provider,
+        role,
+        isConnecting,
+        isDemoMode,
+        connectWallet,
+        connectDemoWallet,
+        disconnectWallet,
+        setRole,
+        submitProject,
+        verifyProject,
+        getBalance,
+        burnTokens,
+      }}
+    >
       {children}
     </Web3Context.Provider>
   );
